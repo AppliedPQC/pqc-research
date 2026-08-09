@@ -731,7 +731,7 @@ So a FRI verifier — Merkle paths, transcript, folding check — is field
 arithmetic over a 31-bit prime, which fits a script number directly. No
 multi-limb representation and no soft fork.
 
-The cost is the hash, and it has now been measured rather than estimated.
+The cost is the hash, and it is measured rather than estimated.
 [`bitcoin-stark-verifier`](https://github.com/AppliedPQC/bitcoin-stark-verifier)
 implements the permutation for [Plonky3](https://github.com/Plonky3/Plonky3)'s
 width-16 KoalaBear instance and emits **572,228 bytes**, which in a taproot
@@ -742,12 +742,6 @@ for that case rather than the number itself. `MAX_STANDARD_TX_WEIGHT` is 400,000
 so **one permutation is 1.43 standard transactions**, or 14.3% of a block — and a
 Merkle path costs one per level. The S-box dominates: a field multiplication is
 1,446 bytes, `x³` is two of them, and the permutation performs 148 cubings.
-
-The figure has moved twice, which is the argument for building rather than
-estimating. An early draft put it near 450,000 by multiplying a round count
-against a published primitive cost; the first measurement came in at 867,595;
-optimisation since has brought it to 572,228. Estimates were wrong in both
-directions, and only the code settled it.
 
 The number is a starting point rather than a floor. Three things in that
 implementation are known to be loose: the internal linear layer is emitted as a
@@ -820,10 +814,10 @@ but changes Ziren's commitment scheme with it. Neither fits a single transaction
 and neither needs to — BitVM already chunks a verifier across a disprove
 pattern — so the question is how many chunks each option costs.
 
-#### The FRI side is no longer an estimate
+#### The whole verifier, measured
 
 The permutation cost above is one hash. What a bridge actually runs is a whole
-verifier, and that has now been built:
+verifier:
 [`bitcoin-stark-verifier`](https://github.com/AppliedPQC/bitcoin-stark-verifier)
 adds a WHIR opening verifier on top of the Poseidon2 script, with **zero uses of
 `OP_CAT`** or any other disabled opcode. Its end-to-end test runs
@@ -837,33 +831,26 @@ of grinding, the verifier is **979 permutations, 560 MB, 140 full blocks**. At
 *fewer queries, not cheaper ones*, because a query's depth is set by the domain
 size and not by λ.
 
-Four findings come out of it, and the first is about the measurements
-themselves.
-
-**The figure has moved twice more since this section was first written, both
-times upward, and both times because something was executed rather than priced.**
-An earlier draft of this report quoted 135 MB and 34 blocks. Two costs were
-missing. Binding an opened row to its Merkle leaf — without which a spender can
-authenticate the committed leaf and fold a different row — was never counted, and
-at folding factor 4 it is eight permutations per query on top of the twenty-one
-the path costs. And the query openings themselves had not been composed into the
-schedule, only priced. The corrected figures are four times the old ones.
+Four findings come out of it.
 
 **Query work is 97.1% of the script**, of which the Merkle paths are 60% and the
-leaf hashing 37%. Sumcheck rounds at 95,100 bytes each are rounding error against
-that. Optimisation effort spent anywhere but hashing addresses 3% of the problem.
+leaf hashing 37%. The leaf hash is the larger surprise: binding an opened row to
+its Merkle leaf — without which a spender can authenticate the committed leaf and
+fold a different row — costs eight permutations per query at folding factor 4, on
+top of the twenty-one the path costs. Sumcheck rounds at 95,100 bytes each are
+rounding error against that, and optimisation effort spent anywhere but hashing
+addresses 3% of the problem.
 
 **Multilinear evaluation is exponential in the variable count**, about
 23.9 KB × 2ⁿ — 740 KB at n = 5, 24 MB at n = 10, 783 MB at n = 15. It passes
 Merkle work at around twelve variables, so for a realistic witness it, not the
 query count, is the binding term.
 
-**And the closing identity is not free once its constraints are derived rather
-than supplied.** Checking `claimed = w(R)·f(r)` against a hinted list of
-constraints is 1.5 MB; deriving those constraints from the transcript — which is
-what stops a spender choosing them — is **92.8 MB**, 7.5% of the verifier. It is
-still arithmetic and still costs no hash. The point is only that "the algebra is
-free" survives the composition and "the algebra is negligible" does not.
+**The closing identity costs 92.8 MB, 7.5% of the verifier, and no hash at
+all.** That is with its constraints derived from the transcript, which is what
+stops a spender choosing them; against a supplied list it is 1.5 MB. The algebra
+is cheap in the sense that matters — it buys no permutations — without being
+negligible.
 
 > **The disprove pattern, briefly.** The verifier is never run on chain in the
 > happy path. An operator posts a claim and a bond; the script is cut into
@@ -877,26 +864,24 @@ free" survives the composition and "the algebra is negligible" does not.
 > chain, which is why total size sets the setup cost and the number of segments
 > sets the challenge latency.
 
-**The chunk count is now measured, and it is the number this section existed to
-produce.** A step cannot be one Merkle level — that already exceeds
+**The chunk count.** A step cannot be one Merkle level — that already exceeds
 `MAX_STANDARD_TX_WEIGHT` by 43% — so it has to be sub-permutation. A Poseidon2
 permutation is a chain of 29 rounds, each taking a state and leaving a state, and
 a disprove script for one round is **50,126 bytes: 12.5% of a standard
 transaction**, seven to a transaction. The 80-bit, 20-variable verifier is 28,855
 steps, so roughly **4,100 chunks**.
 
-Four thousand is the same order as BitVM2's own leaf count. That is the first
-evidence in this comparison that the FRI route is *viable* rather than merely
-cheaper than a pairing verifier nobody can run either.
+Four thousand is the same order as BitVM2's own leaf count, which is what makes
+the FRI route *viable* rather than merely cheaper than a pairing verifier nobody
+can run either.
 
 The measurement is a lower bound, not a simulation of GOAT's pipeline: it
 verifies a WHIR opening and its sumcheck, not a zkVM execution proof. It settles
 the cheap end, which is what the comparison needed.
 
-**The lattice side remains unmeasured**, and the asymmetry now runs the other
-way: FRI's cost is known and large, while the module-lattice verifier's is
-unknown but has no per-level hash to pay. That is the remaining measurement, and
-it is now the one that decides the row.
+**The lattice side remains unmeasured.** FRI's cost is known and large; the
+module-lattice verifier's is unknown, but it has no per-level hash to pay. That is the remaining measurement,
+and it is the one that decides the row.
 
 Two things remain unestablished and should be settled with it. RoKoko's concrete
 ring parameters are not in its abstract, and the modulus width drives its whole
@@ -1393,7 +1378,7 @@ contract that cannot be upgraded can at least be known about before it matters.
 | 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
 | 2 | Peg custody: write and enforce exposure policy — rotate custody outputs, cap value per output, avoid long-lived connectors | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 10). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
 | 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) / [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) through to merge | Gates everything above it, and is the tractable layer: a primitive swap with a working 39-file prototype. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
-| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is now measured end to end — 979 permutations and about 4,100 disprove chunks at 100-bit — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
+| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end — 979 permutations and about 4,100 disprove chunks at 100-bit — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
 | 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
@@ -1502,8 +1487,8 @@ Honestly short, and none of them block the recommendations:
   reproduced; only the dependency structure, the Ziren pin and the garbling
   parameters were read from the tree.
 - The module-lattice verifier has not been written in Bitcoin script, so its
-  cost is unknown. The FRI side is now measured end to end, including the chunk
-  count, which makes this the one number that still decides the proof-system row.
+  cost is unknown. The FRI side is measured end to end, including the chunk
+  count, which makes this the one number that decides the proof-system row.
 - The measured verifier covers a WHIR opening and its sumcheck, not a zkVM
   execution proof, and composes independent Merkle paths where the proof carries
   a pruned frontier. Both make it a lower bound; a batched verifier sharing
