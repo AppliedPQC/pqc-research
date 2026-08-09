@@ -1,7 +1,6 @@
 # Post-quantum migration for Bitcoin layer 2s
 
-**A research report.** Compiled 2026-07-31, revised 2026-08-01 and 2026-08-02,
-from primary sources: BIP text from
+**A research report**, from primary sources: BIP text from
 [`bitcoin/bips`](https://github.com/bitcoin/bips),
 [`UPGRADING.md`](https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md)
 from [`cosmos/cosmos-sdk`](https://github.com/cosmos/cosmos-sdk), the
@@ -28,7 +27,7 @@ inherits from, where the central finding is that progress inverts exposure:
 Bitcoin, with the sharpest exposure, has specified no post-quantum signature
 scheme at all, while Cosmos has one in shipped code. Part III reads one stack —
 GOAT — in depth as the evidence the framework was derived from. Part IV gives
-an ordering. Part V records the method and the recurring traps.
+an ordering. Part V collects the recurring traps and what remains open.
 
 The single most useful finding for practitioners: **symmetric and hash-based
 layers protect only what they carry.** In the stack examined, the Bitcoin-side
@@ -237,17 +236,6 @@ grow from 32 to 1952 bytes and signatures from 64 to 3309 bytes, roughly 60x and
 50x. CometBFT's `MaxSignatureSize` and per-validator `MaxCommitSigBytes` were
 raised to accommodate them, and chains are told to revisit
 `consensus_params.block.max_bytes` and gossip framing limits.
-
-**The IBC hazard.** The most transferable finding in this survey is a warning in
-the Cosmos changelog that has no analogue in the Bitcoin or Ethereum material.
-IBC light clients on a counterparty chain verify your validator set's commit
-signatures using *the counterparty's own compiled-in crypto*. If validators
-holding sufficient voting power sign with a key type a counterparty cannot
-verify, headers fail verification there, packet flow stops, and the light client
-eventually expires. The counterparty needs the verification code, not the key
-type. Post-quantum migration in an interoperable ecosystem is therefore a
-*coordination* problem before it is a cryptographic one — and the failure mode
-is silent until connectivity breaks.
 
 **And the cost is linear, because CometBFT does not aggregate.** The word
 *per-validator* in that parameter name is the whole story. A commit
@@ -747,7 +735,10 @@ The cost is the hash, and it has now been measured rather than estimated.
 [`bitcoin-stark-verifier`](https://github.com/AppliedPQC/bitcoin-stark-verifier)
 implements the permutation for [Plonky3](https://github.com/Plonky3/Plonky3)'s
 width-16 KoalaBear instance and emits **572,228 bytes**, which in a taproot
-witness is the same number of weight units. `MAX_STANDARD_TX_WEIGHT` is 400,000,
+witness is the same number of weight units. That instance is `R_F = 8,
+R_P = 20`; **Ziren's is `R_P = 13`**, so a verifier targeting Ziren drops seven
+internal rounds and their linear layers, and the figure here is an upper bound
+for that case rather than the number itself. `MAX_STANDARD_TX_WEIGHT` is 400,000,
 so **one permutation is 1.43 standard transactions**, or 14.3% of a block — and a
 Merkle path costs one per level. The S-box dominates: a field multiplication is
 1,446 bytes, `x³` is two of them, and the permutation performs 148 cubings.
@@ -774,6 +765,12 @@ builds its transcript and Merkle components on `OP_CAT` with `OP_SHA256`: a byte
 hash is one opcode where an algebraic hash is hundreds of emulated
 multiplications. `OP_CAT` is not what makes FRI *possible* on Bitcoin. It is
 what makes FRI *cheap*.
+
+A third family is worth naming to say why it is not a separate row.
+[BaseFold](https://eprint.iacr.org/2023/1705) generalises FRI to foldable codes
+and would verify through the same Merkle-and-transcript machinery over the same
+algebraic hash, so it lands in the FRI column on cost and inherits the same
+per-level hash. It changes the prover's options, not the script's.
 
 #### Module-lattice arguments
 
@@ -834,22 +831,39 @@ adds a WHIR opening verifier on top of the Poseidon2 script, with **zero uses of
 with Plonky3's own verifier, then re-derives the same claims in script and
 executes them — no hand-built vectors.
 
-Composed at 100-bit security the script is about **135 MB**, or 34 full blocks.
-Three findings come out of it.
+Composed from a Plonky3-derived configuration at 100-bit security with 22 bits
+of grinding, the verifier is **979 permutations, 560 MB, 140 full blocks**. At
+80-bit it is 743 permutations and 106 blocks: lowering the security level buys
+*fewer queries, not cheaper ones*, because a query's depth is set by the domain
+size and not by λ.
 
-**Merkle work is 99.3% of the script.** Sumcheck rounds at 95,100 bytes each and
-the closing identity at 1,447 are rounding error against 26 query paths.
-Optimisation effort spent anywhere but hashing addresses 0.7% of the problem.
+Four findings come out of it, and the first is about the measurements
+themselves.
+
+**The figure has moved twice more since this section was first written, both
+times upward, and both times because something was executed rather than priced.**
+An earlier draft of this report quoted 135 MB and 34 blocks. Two costs were
+missing. Binding an opened row to its Merkle leaf — without which a spender can
+authenticate the committed leaf and fold a different row — was never counted, and
+at folding factor 4 it is eight permutations per query on top of the twenty-one
+the path costs. And the query openings themselves had not been composed into the
+schedule, only priced. The corrected figures are four times the old ones.
+
+**Query work is 97.1% of the script**, of which the Merkle paths are 60% and the
+leaf hashing 37%. Sumcheck rounds at 95,100 bytes each are rounding error against
+that. Optimisation effort spent anywhere but hashing addresses 3% of the problem.
 
 **Multilinear evaluation is exponential in the variable count**, about
 23.9 KB × 2ⁿ — 740 KB at n = 5, 24 MB at n = 10, 783 MB at n = 15. It passes
 Merkle work at around twelve variables, so for a realistic witness it, not the
 query count, is the binding term.
 
-**The chunk count is large.** One Merkle level already exceeds
-`MAX_STANDARD_TX_WEIGHT` by 43%, so the FRI route needs more than one chunk per
-hash — a useful number, because chunking is how BitVM runs a verifier Bitcoin
-cannot execute at once.
+**And the closing identity is not free once its constraints are derived rather
+than supplied.** Checking `claimed = w(R)·f(r)` against a hinted list of
+constraints is 1.5 MB; deriving those constraints from the transcript — which is
+what stops a spender choosing them — is **92.8 MB**, 7.5% of the verifier. It is
+still arithmetic and still costs no hash. The point is only that "the algebra is
+free" survives the composition and "the algebra is negligible" does not.
 
 > **The disprove pattern, briefly.** The verifier is never run on chain in the
 > happy path. An operator posts a claim and a bond; the script is cut into
@@ -863,9 +877,21 @@ cannot execute at once.
 > chain, which is why total size sets the setup cost and the number of segments
 > sets the challenge latency.
 
+**The chunk count is now measured, and it is the number this section existed to
+produce.** A step cannot be one Merkle level — that already exceeds
+`MAX_STANDARD_TX_WEIGHT` by 43% — so it has to be sub-permutation. A Poseidon2
+permutation is a chain of 29 rounds, each taking a state and leaving a state, and
+a disprove script for one round is **50,126 bytes: 12.5% of a standard
+transaction**, seven to a transaction. The 80-bit, 20-variable verifier is 28,855
+steps, so roughly **4,100 chunks**.
+
+Four thousand is the same order as BitVM2's own leaf count. That is the first
+evidence in this comparison that the FRI route is *viable* rather than merely
+cheaper than a pairing verifier nobody can run either.
+
 The measurement is a lower bound, not a simulation of GOAT's pipeline: it
-verifies a WHIR opening and its sumcheck over a six-variable witness, not a zkVM
-execution proof. It settles the cheap end, which is what the comparison needed.
+verifies a WHIR opening and its sumcheck, not a zkVM execution proof. It settles
+the cheap end, which is what the comparison needed.
 
 **The lattice side remains unmeasured**, and the asymmetry now runs the other
 way: FRI's cost is known and large, while the module-lattice verifier's is
@@ -881,8 +907,8 @@ cost in the FRI column and should be settled first.
 
 ### Verdict
 
-**Net effect on the post-quantum position: none.** It is not neutral either.
-Three things are true of it: the pairing assumption lives in the security
+**Net effect on the post-quantum position: no progress — and not cost-free
+either.** Three things are true of it: the pairing assumption lives in the security
 theorem of the scheme that replaces the on-chain verifier, not merely in a
 script the bridge could swap out; Ziren's discrete-log dependency is
 load-bearing in two places, the proving pipeline and the dispute path; and the
@@ -924,18 +950,35 @@ committee member, and without waiting for a spend to reveal anything.** It is
 strictly easier than attacking the Groth16 wrapper, and it is the textbook
 long-exposure case that BIP-360 exists to remove.
 
-**There is a mitigation available today, with no post-quantum scheme required.**
-Taproot outputs may commit a provably unspendable NUMS point as the internal
-key, which disables the key path and leaves only script paths. That is precisely
-the construction BIP-360 proposes to standardise as P2MR, and it can be adopted
-unilaterally now. The cost is real and must be weighed: losing the key path
-means losing the cheap, private cooperative spend, so every peg movement becomes
-a script-path spend with its larger witness. But it converts the peg from
-long-exposure vulnerable to long-exposure safe, which no other change in this
-document achieves without waiting on Bitcoin.
+**The obvious mitigation does not work, and it is worth saying why.** A natural
+move is to commit a provably unspendable NUMS point as the Taproot internal key,
+disabling the key path and leaving only script paths — the construction BIP-360
+proposes to standardise. Against a quantum adversary it buys nothing. A Taproot
+key-path spend is validated by checking a Schnorr signature against the **output
+key `Q`** in the `scriptPubKey`; consensus never examines the internal key, the
+tweak, or how `Q` was constructed. An adversary who can solve discrete log
+computes the secret for `Q` from what is already on chain and signs. NUMS stops
+*classical* parties who do not know a discrete log — which is the committee, not
+the attacker.
 
-This should be evaluated before the proof-system work. It is cheaper, it is
-available immediately, and it closes the easier of the two attacks.
+That is exactly why BIP-360 is a **consensus** soft fork rather than a wallet
+convention: it defines an output type in which no curve point is committed at
+all. The removal of the key path is the protection, and it cannot be obtained by
+choosing a different internal key.
+
+**So the sharper statement is structural.** Any Taproot output is inherently
+long-exposure, because `Q` is committed when the output is created and `Q` alone
+is sufficient to spend it. No key choice changes that. What would change it is a
+hash-committed output type — which BitVM2 cannot use, because it needs script
+paths — or BIP-360, which is Bitcoin's timeline and not the L2's.
+
+**What is available unilaterally is bounding the window, not closing it.** The
+exposure is proportional to how long value sits in a Taproot UTXO, so peg
+policy — rotating custody outputs on a schedule, capping the value in any one
+output, avoiding long-lived connector outputs — reduces the attack surface
+without waiting on anyone. That is worth doing and worth writing down as policy,
+but it should be ranked as risk-bounding rather than as a fix, and it does not
+displace the proof-system work.
 
 ## 11. goat: relayer and consensus
 
@@ -963,9 +1006,24 @@ post-quantum signature.
 **Consensus keys.** Cosmos SDK v0.55 registers ML-DSA-65 as a validator
 consensus key type, opt-in behind
 `genesis.consensus_params.validator.pub_key_types`, with validator key rotation
-shipping in the same release. GOAT runs SDK **v0.53.8** via a fork
-(`goat-cosmos-sdk`), so this is a fork rebase across two minors, not a version
-bump — the rebase is the critical path.
+shipping in the same release. GOAT pins SDK **v0.53.8** from upstream, so this is
+a dependency upgrade across two minors rather than a fork rebase.
+
+That is worth showing, because `go.mod` reads the other way at a glance. The
+`replace` block carries a local-path SDK line that is **commented out**, next to
+an EVM line that is live:
+
+```go
+replace (
+    // github.com/cosmos/cosmos-sdk => ../goat-cosmos-sdk
+    github.com/ethereum/go-ethereum => github.com/GOATNetwork/goat-geth v0.4.1
+)
+```
+
+So `goat-geth` is a real fork and `goat-cosmos-sdk` is not one in this build.
+Anything that greps for the module path finds both and concludes there are two
+forks, which inverts the schedule estimate for this row: a rebase is the critical
+path, an upgrade is not.
 
 GOAT's validators sign with **secp256k1**, not the Cosmos default of ed25519.
 [`cmd/goatd/cmd/modgen/init.go`](https://github.com/GOATNetwork/goat/blob/main/cmd/goatd/cmd/modgen/init.go)
@@ -981,15 +1039,10 @@ Two version facts bound that work. `go.mod` pins CometBFT **v0.38.25**, which
 predates both the ML-DSA-65 key type and the expanded signature budget described
 in section 6; that release does not even contain `crypto/bls12381`. And the same
 `init.go` sets `Block.MaxBytes = 50 * 1024 * 124`, which is 6,348,800 bytes,
-about 6 MiB — the arithmetic reads like an intended 50 MiB with a transposed
-digit. Whatever the intent, a chain moving to 3309-byte consensus signatures
+about 6 MiB — the arithmetic reads like an intended 50 MiB with a digit dropped
+from 1024. Whatever the intent, a chain moving to 3309-byte consensus signatures
 should confirm this number deliberately: at 6 MiB the commit is a materially
 larger fraction of the block than the CometBFT defaults assume.
-
-`ibc-go` does not appear in `goat`'s `go.mod`, so the IBC light-client hazard
-that dominates Cosmos post-quantum migration — enabling a key type counterparties
-cannot verify stops packet flow and expires the client — appears not to apply.
-Worth confirming against deployment reality rather than `go.mod` alone.
 
 Consensus keys lose nothing structurally in that move, because CometBFT never
 aggregated them: a commit is an array of one signature per validator (section 6),
@@ -1185,7 +1238,8 @@ in `goat-geth` carries the full upstream set:
 | `p256Verify` | secp256r1 ECDSA ([RIP-7212](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7212.md)) | **broken** |
 | `0x02`, `0x03`, `0x04`, `0x05`, `0x09` | SHA-256, RIPEMD-160, identity, modexp, BLAKE2F | safe |
 
-Three curve families and two pairing engines, all consensus-critical.
+Four curve families — secp256k1, secp256r1, BN254, BLS12-381 — and two pairing
+engines, all consensus-critical.
 
 **This is a harder migration than account signatures, though not a hopeless
 one.** Account keys can migrate through account abstraction, because the *user*
@@ -1337,9 +1391,9 @@ contract that cannot be upgraded can at least be known about before it matters.
 | --- | --- | --- |
 | 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The `VerifySign` 64-byte gate shows these assumptions are load-bearing and invisible |
 | 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
-| 2 | Peg custody: evaluate NUMS-internal-key (script-path-only) Taproot outputs | Cheapest real gain, available today, no PQ scheme needed; closes the easiest attack |
+| 2 | Peg custody: write and enforce exposure policy — rotate custody outputs, cap value per output, avoid long-lived connectors | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 10). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
 | 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) / [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) through to merge | Gates everything above it, and is the tractable layer: a primitive swap with a working 39-file prototype. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
-| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half of that comparison is now measured — one Merkle level is 572,252 script bytes, over `MAX_STANDARD_TX_WEIGHT` — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and half the deciding measurement now exists, so what gates the decision is the lattice verifier's cost |
+| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is now measured end to end — 979 permutations and about 4,100 disprove chunks at 100-bit — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
 | 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
@@ -1412,6 +1466,16 @@ Collected from the analysis so far; each cost real effort to notice.
   the content, not the wrapper — and separately check the symmetric layer's own
   parameter, since 128-bit labels sit at the floor of the approved
   post-quantum range.
+- **A mitigation that stops classical misuse may stop nothing quantum.** A NUMS
+  Taproot internal key makes the key path unspendable by anyone who does not know
+  a discrete log — which is everyone except the adversary the migration is about.
+  Consensus checks a signature against the *output* key, so who chose the
+  internal key is irrelevant to someone who can solve discrete log. Ask which
+  adversary a mitigation excludes, not which spend path it closes.
+- **A commented-out `replace` directive reads as a fork.** Anything that greps a
+  `go.mod` for a module path finds live and commented lines alike. In the stack
+  examined this inverted a schedule estimate: one dependency is genuinely forked
+  and one is not, and the difference is a rebase versus a version bump.
 - **Interoperability makes migration a coordination problem.** Where light
   clients verify a counterparty's signatures with their own compiled-in crypto,
   enabling a new key type before counterparties can verify it breaks
@@ -1438,21 +1502,28 @@ Honestly short, and none of them block the recommendations:
   reproduced; only the dependency structure, the Ziren pin and the garbling
   parameters were read from the tree.
 - The module-lattice verifier has not been written in Bitcoin script, so its
-  cost is unknown. The FRI side is now measured, which makes this the one number
-  that still decides the proof-system row.
-- The measured verifier covers a WHIR opening and its sumcheck over a
-  six-variable witness, not a zkVM execution proof, and composes independent
-  Merkle paths where the proof carries a pruned frontier. Both make it a lower
-  bound; a batched verifier sharing internal nodes would be cheaper by some
-  factor not yet established.
+  cost is unknown. The FRI side is now measured end to end, including the chunk
+  count, which makes this the one number that still decides the proof-system row.
+- The measured verifier covers a WHIR opening and its sumcheck, not a zkVM
+  execution proof, and composes independent Merkle paths where the proof carries
+  a pruned frontier. Both make it a lower bound; a batched verifier sharing
+  internal nodes would be cheaper by some factor not yet established.
+- The chunk count assumes a disprove is bounded by transaction weight alone. It
+  does not price the commitment layer: each step boundary needs a one-time
+  signature over a 16-element state, and 4,100 of those is a setup cost this
+  report has not estimated.
+- The script figures are taken against Plonky3's Poseidon2 instance
+  (`R_P = 20`), not Ziren's (`R_P = 13`), so they are an upper bound for a
+  Ziren-targeted verifier by roughly the cost of seven internal rounds.
 - No second L2 has been examined, so Part I's taxonomy is structural reasoning
   supported by one case, not a survey.
 
 ## References
 
 Primary sources, each verified live: the base-layer and GOAT sources on
-2026-07-31, the aggregation sources on 2026-08-01, and the script-cost sources on
-2026-08-02.
+2026-07-31, the aggregation sources on 2026-08-01, the script-cost sources on
+2026-08-02, and — on 2026-08-10 — `goat`'s `go.mod` `replace` block and every
+script figure in section 9, which were re-measured rather than re-read.
 
 - BIP-360, *Pay-to-Merkle-Root (P2MR)* — <https://github.com/bitcoin/bips/blob/master/bip-0360.mediawiki>
 - BIP-361, *Post Quantum Migration and Legacy Signature Sunset* — <https://github.com/bitcoin/bips/blob/master/bip-0361.mediawiki>
