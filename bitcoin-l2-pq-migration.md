@@ -518,14 +518,14 @@ Heath), which reports "we improve BABE's encoding size by 45×, and Argo MAC's b
 
 GOAT's contribution sits on top of that stack. Vanilla BABE requires the full
 public input to be fixed before garbling, which the bridge cannot do: the
-dynamic part $x_D$ — L2 state, sequencer commitments, watchtower data — is only
-known at peg-out, so by then the committed $vk_x$ is stale and decryption fails.
+dynamic part `x_D` — L2 state, sequencer commitments, watchtower data — is only
+known at peg-out, so by then the committed `vk_x` is stale and decryption fails.
 [**Deferred Binding**](https://hackmd.io/@goatresearch/HkKp2g1Zfl) — whose formal
 write-up defines the primitive it rests on,
 [partial-binding witness encryption](https://github.com/GOATNetwork/bitvm2-gc/blob/feat/goat-bitvm3/docs/partial_binding_we.tex) —
 resolves this with a **Dual-Scalar Garbled Circuit** whose two outputs,
-$r \cdot \pi_1$ and $r \cdot P_D + r \cdot B$, "provide prefix binding on $x_S$
-and proactive cryptographic binding on $x_D$", with $B$ a verifier-chosen
+`r * pi_1` and `r * P_D + r * B`, "provide prefix binding on `x_S`
+and proactive cryptographic binding on `x_D`", with `B` a verifier-chosen
 blinding point hidden inside the circuit. It is implemented, not proposed: the
 [`feat/goat-bitvm3`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3)
 branch of `bitvm2-gc` carries a
@@ -539,13 +539,15 @@ workspace alongside the older `garbled-snark-verifier`.
 The design doc fixes the relation in its first paragraph: a Type-III pairing on
 **BN254**, with the verifier accepting iff
 
-$$e(\pi_1, \pi_2) = e(\alpha, \beta) \cdot e(vk_x, \gamma) \cdot e(\pi_3, \delta_2)$$
+```text
+e(pi_1, pi_2) = e(alpha, beta) * e(vk_x, gamma) * e(pi_3, delta_2)
+```
 
-A ciphertext is $(gc\_ct, adaptor, ct_2, ct_3)$ with $ct_2 = r \cdot \delta_2$
-and $ct_3 = \mathsf{msg} \oplus H(r \cdot Y)$, where
-$Y = e(\alpha, \beta) \cdot e(vk_x, \gamma)$. Decryption recovers
-$r \cdot Y \gets e(ct_1, \pi_2) / e(\pi_3, ct_2)$ — that step is *justified by
-the Groth16 equation above* — and then unmasks $\mathsf{msg}$.
+A ciphertext is `(gc_ct, adaptor, ct_2, ct_3)` with `ct_2 = r * delta_2`
+and `ct_3 = msg XOR H(r * Y)`, where
+`Y = e(alpha, beta) * e(vk_x, gamma)`. Decryption recovers
+`r * Y <- e(ct_1, pi_2) / e(pi_3, ct_2)` — that step is *justified by
+the Groth16 equation above* — and then unmasks `msg`.
 
 So the witness that unlocks the payout is a valid Groth16 proof over BN254, and
 the correctness property of the scheme guarantees that anyone holding one can
@@ -553,8 +555,8 @@ decrypt. This is the design working as intended; it is also the entire
 post-quantum problem.
 
 **The on-chain side genuinely is hash-based.** The doc is explicit that Bitcoin
-script is used only for hash commitments to $(ct_2, ct_3)$, gate-by-gate
-garbled-circuit unlocking, and "a hashlock on $\mathsf{msg}$ gating the final
+script is used only for hash commitments to `(ct_2, ct_3)`, gate-by-gate
+garbled-circuit unlocking, and "a hashlock on `msg` gating the final
 UTXO spend", concluding: "No pairings or target-group arithmetic are evaluated
 on chain." Every on-chain primitive here — hashlocks, Lamport commitments, the
 garbling — survives Shor. That is exactly what makes the composition
@@ -565,21 +567,23 @@ misleading.
 The usual way to argue this section would be inference. It is not necessary
 here, because GOAT's own security analysis states the reduction:
 
-$$\mathsf{Adv}^{\mathrm{pbWE}}_{\mathcal{A}}(\lambda) \;\leq\; \mathsf{Adv}^{\mathrm{BABE}}(\lambda) \,+\, \mathsf{Adv}^{\mathrm{DLog}}_{\mathbb{G}_1}(\lambda)$$
+```text
+Adv_pbWE(lambda)  <=  Adv_BABE(lambda)  +  Adv_DLog[G1](lambda)
+```
 
-with a companion lemma bounding leakage of the secret scalar $r$ by
-$\mathsf{Adv}^{\mathrm{DLog}}_{\mathbb{G}_1} + \mathsf{Adv}^{\mathrm{coDLog}}$,
-because "public exposures of $r$-scaled samples ... are multi-instance DLog
+with a companion lemma bounding leakage of the secret scalar `r` by
+`Adv_DLog[G1] + Adv_coDLog`,
+because "public exposures of `r`-scaled samples ... are multi-instance DLog
 challenges with a shared scalar". The conclusion states the assumption set:
 "The reduction stays within standard BABE assumptions plus GC-security and
 Lamport one-wayness."
 
-Read that against Shor. $\mathsf{Adv}^{\mathrm{DLog}}_{\mathbb{G}_1}$ on BN254
+Read that against Shor. `Adv_DLog[G1]` on BN254
 goes to 1 against a cryptographically relevant quantum computer, and
-$\mathsf{Adv}^{\mathrm{BABE}}$ rests on the same curve. The bound does not
+`Adv_BABE` rests on the same curve. The bound does not
 degrade gracefully — it becomes vacuous. Concretely, an adversary who can solve
 discrete log on BN254 forges a Groth16 proof for a peg-out that never happened,
-decrypts $\mathsf{msg}$ through the scheme's own correctness property, and
+decrypts `msg` through the scheme's own correctness property, and
 spends the hashlocked UTXO. No garbling is broken, no hash is inverted, and no
 step of the protocol misbehaves.
 
@@ -609,7 +613,7 @@ argument rests on an elliptic-curve multiset hash — the ECMH construction of
 [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276), whose own text says
 soundness holds only "if DLOG hardness is preserved" (section 8). So the
 soldering proof, which is what makes the cut-and-choose argument and therefore
-the 1-of-$n$ honest-verifier assumption meaningful, **inherits a second,
+the 1-of-`n` honest-verifier assumption meaningful, **inherits a second,
 independent discrete-log dependency**. Before this work, Ziren's exposure sat in
 the proving pipeline. It now also sits on the bridge's dispute path.
 
@@ -653,7 +657,7 @@ BN254 dependency disappears. It does not follow, for a structural reason.
 
 BABE is a witness encryption scheme **for linear pairing relations**. What makes
 Groth16 expressible is that its verification equation is a pairing product, so
-$Y$ can be formed at encryption time from $vk$ and the public input, and
+`Y` can be formed at encryption time from `vk` and the public input, and
 recovered at decryption time by pairing the proof elements. A FRI/Poseidon
 verifier has no pairing relation, no target group, and no short algebraic
 acceptance predicate — it is a Merkle-and-hash argument with a large,
