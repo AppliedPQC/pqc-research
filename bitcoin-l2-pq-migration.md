@@ -864,16 +864,46 @@ negligible.
 > chain, which is why total size sets the setup cost and the number of segments
 > sets the challenge latency.
 
-**The chunk count.** A step cannot be one Merkle level — that already exceeds
-`MAX_STANDARD_TX_WEIGHT` by 43% — so it has to be sub-permutation. A Poseidon2
-permutation is a chain of 29 rounds, each taking a state and leaving a state, and
-a disprove script for one round is **50,126 bytes: 12.5% of a standard
-transaction**, seven to a transaction. The 80-bit, 20-variable verifier is 28,855
-steps, so roughly **4,100 chunks**.
+**The chunk count, with the commitment layer priced.** A step cannot be one
+Merkle level — that already exceeds `MAX_STANDARD_TX_WEIGHT` by 43% — so it has
+to be sub-permutation. A Poseidon2 permutation is a chain of 29 rounds, each
+taking a state and leaving a state, and the disprove script for one is 50,126
+bytes.
 
-Four thousand is the same order as BitVM2's own leaf count, which is what makes
+That is the predicate, not the spend. A predicate over *supplied* states decides
+nothing about whose claim it is: a spender answers one challenge with one state
+and the next with another, and no predicate can tell. Binding it means taking
+both states from one-time signatures, which is 44 kB on top — Winternitz, which
+fits Bitcoin because a hash chain only ever hashes a single item, so `OP_HASH160`
+suffices and no soft fork is needed.
+
+The Winternitz parameter turns out to be forced from above rather than chosen.
+One chain per bit is the cheapest thing to verify and does not work: a committed
+state is 496 bits, so 505 chains, so **1,010 witness items against Bitcoin's
+stack limit of 1,000** — the script fails before executing an opcode. At `w = 16`
+a state is 131 chains and two signatures are 524 items.
+
+The last saving is to commit at *chunk* boundaries rather than at every round,
+since a challenger only executes the run containing the disputed round:
+
+| | bytes | of a standard tx | commitments per permutation |
+| --- | ---: | ---: | ---: |
+| one committed round | 94,020 | 23.5% | 29 |
+| a 22-round chunk | **395,916** | **99.0%** | **2** |
+
+Twenty-two is longer than dividing the budget by a round suggests, because the
+rounds differ: an external round applies the S-box to all sixteen state elements
+and costs 50,028 bytes, an internal round applies it to one and costs 8,434, and
+the eight external rounds sit at opposite ends of the permutation so no window of
+22 contains more than four.
+
+The 80-bit, 20-variable verifier is then **1,990 chunks**, and 100-bit at 16
+variables is 1,958.
+
+Two thousand is the same order as BitVM2's own leaf count, which is what makes
 the FRI route *viable* rather than merely cheaper than a pairing verifier nobody
-can run either.
+can run either — and unlike the earlier figure it is a bound on the setup as well
+as the spend, since the commitments are what setup consists of.
 
 The measurement is a lower bound, not a simulation of GOAT's pipeline: it
 verifies a WHIR opening and its sumcheck, not a zkVM execution proof. It settles
@@ -1378,7 +1408,7 @@ contract that cannot be upgraded can at least be known about before it matters.
 | 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
 | 2 | Peg custody: write and enforce exposure policy — rotate custody outputs, cap value per output, avoid long-lived connectors | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 10). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
 | 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) / [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) through to merge | Gates everything above it, and is the tractable layer: a primitive swap with a working 39-file prototype. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
-| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end — 979 permutations and about 4,100 disprove chunks at 100-bit — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
+| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end — 979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced — so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has — no soft fork — and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
 | 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
@@ -1493,10 +1523,10 @@ Honestly short, and none of them block the recommendations:
   execution proof, and composes independent Merkle paths where the proof carries
   a pruned frontier. Both make it a lower bound; a batched verifier sharing
   internal nodes would be cheaper by some factor not yet established.
-- The chunk count assumes a disprove is bounded by transaction weight alone. It
-  does not price the commitment layer: each step boundary needs a one-time
-  signature over a 16-element state, and 4,100 of those is a setup cost this
-  report has not estimated.
+- The chunk count prices the on-chain spend and the number of one-time keys, but
+  not generating them: 1,990 chunk boundaries at 131 chains each is roughly a
+  quarter of a million hash chains, which is the cost BitVM2 deployments
+  actually struggle with and is not estimated here.
 - The script figures are taken against Plonky3's Poseidon2 instance
   (`R_P = 20`), not Ziren's (`R_P = 13`), so they are an upper bound for a
   Ziren-targeted verifier by roughly the cost of seven internal rounds.
