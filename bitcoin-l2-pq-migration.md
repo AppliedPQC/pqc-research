@@ -801,20 +801,29 @@ one. It is not the wrapper trap. But it costs a recursion layer that changing th
 commitment scheme does not.
 
 Against those, there is no per-level hash to pay, and proof sizes are the
-smallest of any post-quantum family: [LaBRADOR](https://eprint.iacr.org/2022/1341)
-**58 KB** for R1CS with 2²⁰ constraints,
-[SALSAA](https://eprint.iacr.org/2025/2124) **73 KB and 2.28 ms** verification
-for a 2²⁸-element witness,
-[RoKoko](https://eprint.iacr.org/2026/575) (Klooss, Lai, Nguyen, Osadnik and
-Tucci) roughly **200 KB** with about 100× faster verification than
-[Greyhound](https://eprint.iacr.org/2024/1293).
+smallest of any post-quantum family:
+[LaBRADOR](https://eprint.iacr.org/2022/1341) is **58 KB** for R1CS with 2²⁰
+constraints, at the 128-bit level.
+
+Size is not what decides it, though, and the published figures do not compare
+directly. A script pays for **verification**, and that is where this line is
+weakest: LaBRADOR's verifier is linear-time, and
+[Greyhound](https://eprint.iacr.org/2024/1293)'s measured verification is
+**2.80 s** at degree 2³⁰, which its own paper concedes is about twice Ligero's.
+The headline numbers also measure different things — Greyhound's 53 KB is an
+evaluation proof rather than an R1CS proof, and
+[SALSAA](https://eprint.iacr.org/2025/2124)'s much-quoted 73 KB is one folding
+step on linear relations rather than a standalone proof, against **979 KB** for
+its general-purpose argument at the same 2²⁸-element witness. So the comparison
+has to be made by measuring, which is where this section ends up anyway.
 
 **Both are viable without a soft fork, and the choice is a measurement rather
 than a research question.** `OP_CAT` decides how *expensive* a hash-committed
 verifier is, not whether one is possible. FRI over Poseidon2 verifies what Ziren
 already emits and pays a few hundred multiplications per Merkle level; a
 module-lattice argument has no per-level hash and the smallest proofs available,
-but changes Ziren's commitment scheme with it. Neither fits a single transaction,
+but pays for them in verifier work and changes Ziren's commitment scheme with
+it. Neither fits a single transaction,
 and neither needs to — BitVM already chunks a verifier across a disprove
 pattern — so the question is how many chunks each option costs.
 
