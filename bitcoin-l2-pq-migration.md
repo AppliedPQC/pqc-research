@@ -444,6 +444,24 @@ already built it. It remains ZKM's work rather than something GOAT can fix in
 over a DLOG-dependent execution proof buys nothing), but it should be read as a
 dependency to track and support, not as an open research problem.
 
+A second solution exists, and it should be marked as one: revert the memory
+argument to LogUp. Ziren's own design documents record that memory consistency
+was a LogUp lookup between the global and local memory tables before the
+multiset hash replaced it, and Ziren still uses LogUp for every other cross-chip
+check, so the machinery is in the tree today. A LogUp memory argument, with GKR
+to prove the fractional sums as in the LogUp-GKR variant of Papini and
+Haböck, is field arithmetic committed under FRI and nothing else. It removes
+the discrete-log dependency without putting a lattice assumption in its place:
+the proof system's assumption set returns to the hash alone. What it gives back
+is what the multiset hash was adopted for. With execution split across shards,
+the LogUp challenge has to be derived after commitments to every shard's read
+and write sets, so the incremental, challenge-free accumulation the ECMH
+provided has to be replaced by an accumulated or two-pass challenge derivation
+across shards. That is an engineering cost inside a mechanism Ziren already
+ships, not a new primitive. Either route closes the gap; the LogUp route closes
+it with the smaller assumption set, and it is the one this report recommends
+where the sharded challenge derivation is acceptable.
+
 And the garbling stack is built around Groth16 specifically. `bitvm2-gc` is
 not a general circuit garbler that happens to be pointed at Groth16; its
 headline crate is `garbled-snark-verifier` and its circuit tree is organised
@@ -457,7 +475,7 @@ The proof path contains three independent Shor-vulnerable layers, not one:
 | Layer | Primitive | Quantum status | Where the fix lives |
 | --- | --- | --- | --- |
 | Ziren FRI / Poseidon commitment | hash-based | safe | — |
-| Ziren multiset memory check | **hash-to-curve (ECMH), DLOG** | **broken** | ZKM, [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276); **prototype exists** ([`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)) |
+| Ziren multiset memory check | **hash-to-curve (ECMH), DLOG** | **broken** | ZKM, [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276); **two solutions**: the [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) prototype, or reverting the memory argument to LogUp-GKR |
 | Groth16 wrap | **BN254 pairing** | **broken** | GOAT |
 | `bitvm2-gc` garbled verifier | AES-128 garbling of a **Groth16 verifier** | garbling safe, **statement broken** | GOAT, and it is a rebuild |
 | BABE / Deferred Binding | witness encryption **against the Groth16 relation** | on-chain surface safe, **relation broken** | GOAT; see section 9 |
@@ -1421,7 +1439,7 @@ Applied to GOAT:
 | 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The `VerifySign` 64-byte gate shows these assumptions are load-bearing and invisible |
 | 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
 | 2 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 10). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
-| 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) / [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) through to merge | Gates everything above it, and is the tractable layer: a primitive swap with a working 39-file prototype. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
+| 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working 39-file prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
 | 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
 | 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
@@ -1524,7 +1542,10 @@ Honestly short, and none of them block the recommendations:
   the one item on this list with a deadline: an immutable caller can be
   identified now but never migrated later.
 - Ziren's `feat/lthash` prototype has not been reviewed here for completeness or
-  merged upstream; whether it covers every ECMH use site is unchecked.
+  merged upstream; whether it covers every ECMH use site is unchecked. The
+  LogUp-GKR alternative is stated from Ziren's design documents and the LogUp
+  machinery in its tree, not from a prototype; its cost is the cross-shard
+  challenge derivation, which is not measured here.
 - The BABE work of section 9 lives on the `feat/goat-bitvm3` branch of
   `bitvm2-gc`, not on `main`, so the audit describes an in-flight design. The
   cut-and-choose and cost figures are taken from GOAT's note rather than
@@ -1590,6 +1611,8 @@ script figure in section 9, which were re-measured rather than re-read.
 - `BitVM/BitVM`, `bitvm/src/bigint/mul.rs` — double-and-add multiplication in Bitcoin script — <https://github.com/bitvm/bitvm>
 - `Bitcoin-Wildlife-Sanctuary/rust-bitcoin-m31`, measured M31 script weights — <https://github.com/Bitcoin-Wildlife-Sanctuary/rust-bitcoin-m31>
 - Zisk, *Secure challenge derivation* (lattice-based multiset hashing) — <https://zisk.technology/secure-challenge-derivation-in-zisk/>
+- Ziren design documents, *Memory consistency checking* and *Lookup arguments* (the LogUp memory argument the multiset hash replaced) — <https://github.com/ProjectZKM/Ziren/blob/main/docs/src/design/memory-checking.md>, <https://github.com/ProjectZKM/Ziren/blob/main/docs/src/design/lookup-arguments.md>
+- S. Papini, U. Haböck, *Improving logarithmic derivative lookups using GKR* (LogUp-GKR) — <https://eprint.iacr.org/2023/1284>
 - Ziren, `crates/primitives/src/lib.rs` (`Poseidon2KoalaBear<16>`, `ROUNDS_F = 8`, `ROUNDS_P = 13`) — <https://github.com/ProjectZKM/Ziren>
 - *Greyhound: Fast Polynomial Commitments from Lattices* — <https://eprint.iacr.org/2024/1293>
 - `AppliedPQC/bitcoin-stark-verifier` — Poseidon2 and a WHIR opening verifier in Bitcoin script, without `OP_CAT`; source of every script-size figure in section 9 — <https://github.com/AppliedPQC/bitcoin-stark-verifier>
