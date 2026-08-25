@@ -1,16 +1,5 @@
 # Post-quantum migration for Bitcoin layer 2s
 
-A research report, from primary sources: BIP text from
-[`bitcoin/bips`](https://github.com/bitcoin/bips),
-[`UPGRADING.md`](https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md)
-from [`cosmos/cosmos-sdk`](https://github.com/cosmos/cosmos-sdk), the
-[Ziren issue tracker](https://github.com/ProjectZKM/Ziren/issues), the
-[GOAT repositories](https://github.com/GOATNetwork) and their dependency trees
-read through the GitHub API and local clones, and, for section 9, the BABE
-and Argo MAC papers alongside GOAT's own
-[Deferred Binding design doc](https://github.com/GOATNetwork/bitvm2-gc/blob/feat/goat-bitvm3/docs/partial_binding_we.tex). Claims are stated as verified; checks
-still outstanding are listed under *Remaining open items*.
-
 ## Abstract
 
 A Bitcoin layer 2 has a post-quantum problem that neither Bitcoin nor Ethereum
@@ -22,14 +11,15 @@ surfaces it can act on and surfaces where it can only bound exposure and press
 upstream.
 
 Part I sets out that structure and a seven-row surface taxonomy keyed on *who
-can actually fix each row*. Part II surveys the three base layers an L2
+can fix each row*. Part II surveys the three base layers an L2
 inherits from, where the central finding is that progress inverts exposure:
 Bitcoin, with the sharpest exposure, has specified no post-quantum signature
 scheme at all, while Cosmos has one in shipped code. Part III reads one stack,
 GOAT, in depth as the evidence the framework was derived from. Part IV gives
-an ordering. Part V collects the recurring traps and what remains open.
+an ordering. Part V collects the recurring pitfalls and the remaining open
+items.
 
-The single most useful finding for practitioners: symmetric and hash-based
+The finding of most practical consequence is that symmetric and hash-based
 layers protect only what they carry. In the stack examined, the Bitcoin-side
 commitment layer, the garbling layer, the FRI commitment and the witness
 encryption that replaces the on-chain verifier are all post-quantum, and the
@@ -37,6 +27,20 @@ bridge is still not, because every one of them is wrapping or carrying an
 elliptic-curve assertion. Section 9 follows that pattern through four
 generations of the same component and finds it stated outright in the security
 proof of the newest one.
+
+## Sources and verification
+
+The analysis is drawn from primary sources: BIP text from
+[`bitcoin/bips`](https://github.com/bitcoin/bips),
+[`UPGRADING.md`](https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md)
+from [`cosmos/cosmos-sdk`](https://github.com/cosmos/cosmos-sdk), the
+[Ziren issue tracker](https://github.com/ProjectZKM/Ziren/issues), the
+[GOAT repositories](https://github.com/GOATNetwork) and their dependency trees
+read through the GitHub API and local clones, and, for section 9, the BABE
+and Argo MAC papers alongside GOAT's own
+[Deferred Binding design doc](https://github.com/GOATNetwork/bitvm2-gc/blob/feat/goat-bitvm3/docs/partial_binding_we.tex).
+Claims are stated as verified; checks still outstanding are listed under
+*Remaining open items* (section 17).
 
 ---
 
@@ -68,14 +72,14 @@ That composition produces a problem neither Bitcoin nor Ethereum has alone:
 
 So the goal is *make both the L2 and the base layer post-quantum safe*, while
 recognising that the L2 can schedule only half of it. The rest of this report
-separates the surfaces it owns from the ones where the honest move is to bound
-exposure and track someone else's roadmap.
+separates the surfaces it owns from the ones where the available course is to
+bound exposure and track upstream roadmaps.
 
 ## 2. The surface taxonomy
 
 Any Bitcoin L2 that settles to L1 and runs its own consensus has, at minimum,
-these cryptographic surfaces. The taxonomy is the useful artifact: it makes the
-ownership question explicit before the scheme-selection question.
+these cryptographic surfaces. The taxonomy makes the ownership question
+explicit before the scheme-selection question.
 
 | # | Surface | Typical scheme | Fails to Shor? | Who can fix it |
 | --- | --- | --- | --- | --- |
@@ -99,7 +103,7 @@ shared problem and differ only in speed. They do not: they are solving
 structurally different problems, and their relative progress inverts the usual
 assumption.*
 
-## 3. Taxonomy: what problem is each chain actually solving?
+## 3. The three base-layer problems compared
 
 | | **Bitcoin** | **Ethereum** | **Cosmos** |
 | --- | --- | --- | --- |
@@ -121,7 +125,7 @@ that is Taproot with the key-path spend removed, so no bare public key is ever
 committed on chain. The BIP is explicit about the limits of that: protection
 "does not depend on the activation of post-quantum signatures", it defends
 against *long* exposure only, and "P2MR does not, by itself, protect against
-short exposure quantum attacks". Most decisively for RQ1, the text states:
+short exposure quantum attacks". Most decisively, the text states:
 "While this proposal does not include the introduction of post-quantum
 signature schemes"; the authors are "currently researching options".
 
@@ -131,7 +135,7 @@ pre-announced sunset of legacy ECDSA/Schnorr, framing quantum security as "a
 private incentive". Its `Requires` field reads: "TBD Post Quantum Signature
 BIP".
 
-That dependency is the finding. Bitcoin has a hardening step and a deadline
+That unresolved dependency is the central observation. Bitcoin has a hardening step and a deadline
 plan, and the deadline plan formally depends on a document that does not yet
 exist. Checked again on 2026-07-31: the BIPs index still contains exactly one
 post-quantum entry, BIP-361 itself. The exposure is not hypothetical: BIP-361
@@ -207,14 +211,14 @@ motivation states the reasoning directly: "Choosing to integrate NTT and InvNTT
 instead of a specific algorithm provides agility, as DILITHIUM or FALCON or any
 equivalent can be implemented with a modest cost from those operators", and the
 same operator "is also of interest to speed-up STARK verifiers", so one
-precompile serves both scaling and the quantum transition. That is crypto-agility
-designed in at the layer where Ethereum previously failed to have it.
+precompile serves both scaling and the quantum transition. This introduces
+crypto-agility at the layer where it was previously absent.
 
 Nothing post-quantum has shipped to Ethereum mainnet on any of these fronts;
 EIP-7885, EIP-8141 and
 [EIP-8151](https://eips.ethereum.org/EIPS/eip-8151) are all Draft.
 
-## 6. Cosmos: a negotiation problem, and the one that shipped
+## 6. Cosmos: key-type negotiation, with a shipped implementation
 
 Cosmos SDK v0.55 registers
 [ML-DSA-65 (FIPS 204)](https://docs.cosmos.network/sdk/latest/keys/post-quantum-keys)
@@ -293,7 +297,7 @@ interaction. The proto-framing comment in the same file reasons directly
 about "ML-DSA-65's 3309-byte sigs", so this was sized for post-quantum keys on
 purpose.
 
-One consequence is easy to miss: the maximum is
+One consequence is less obvious: the maximum is
 over key types the build *supports*, not the ones a chain *enables*. Every chain
 on a CometBFT carrying `mldsa65` inherits the larger default block size whether
 or not its validators ever use a post-quantum key. The cost of the option is
@@ -312,8 +316,8 @@ aggregation to `crypto/bls12381`,
 merging. BLS12-381 exists in CometBFT as a *key type*, not as aggregated commits.
 Two abandoned attempts is evidence about difficulty, not only about priority.
 
-The most transferable finding in this survey is an IBC warning in
-the Cosmos changelog that has no analogue in the Bitcoin or Ethereum material.
+A finding that generalises beyond Cosmos is an IBC warning in the Cosmos
+changelog that has no analogue in the Bitcoin or Ethereum material.
 IBC light clients on a counterparty chain verify your validator set's commit
 signatures using *the counterparty's own compiled-in crypto*. If validators
 holding sufficient voting power sign with a key type a counterparty cannot
@@ -344,14 +348,14 @@ that the case study and the framework can be read against each other.
 | 6 | EVM accounts | [`goat-geth`](https://github.com/GOATNetwork/goat-geth) | secp256k1 ECDSA | broken by Shor | GOAT, at tooling cost |
 
 Peg custody spans two rows: the output is an L1 settlement output, but its
-*construction* is GOAT's choice, which is what makes the mitigation in section 10
+*construction* is GOAT's choice, which is what makes the mitigation in section 11
 available without waiting on Bitcoin.
 
-The headline is in rows 3 and 4. BitVM2's Bitcoin-side plumbing is already
+The principal result is in rows 3 and 4. BitVM2's Bitcoin-side plumbing is already
 post-quantum; its cryptographic content is not. That reframes the work from a
 rewrite into two contained swaps.
 
-## 8. bitvm2-node: the plumbing is hash-based, the content is not
+## 8. bitvm2-node: hash-based transport of elliptic-curve content
 
 [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) is a Rust ZK bridge: crates for `bitcoin-light-client-circuit`,
 `header-chain`, `state-chain`, `commit-chain`, `bitvm2-ga`, with circuits for
@@ -369,14 +373,14 @@ bitvm       = { git = "https://github.com/GOATNetwork/BitVM.git", branch = "GA" 
 
 Occurrence counts in the repository: `groth16` 24, `bn254` 15, `musig2` 11.
 
-The broken pieces first. Groth16 over BN254 is a *pairing-based* proof system.
+Consider first the quantum-vulnerable components. Groth16 over BN254 is a *pairing-based* proof system.
 Pairing-friendly curves fall to Shor exactly as ECDSA does, so a
 cryptographically relevant quantum computer could forge bridge proofs, not
 merely steal keys. That is a more severe failure mode than key theft: it
 compromises the bridge's soundness rather than an individual's funds. MuSig2
 over secp256k1, used for peg-out authorisation, is broken in the ordinary way.
 
-The safe piece is the useful one. BitVM2 carries values
+The remaining layer is hash-based, and it is structurally significant. BitVM2 carries values
 between Bitcoin script fragments using *bit commitments* implemented as
 Winternitz one-time signatures, hash-based and therefore post-quantum on the
 same conservative assumption as SLH-DSA. The
@@ -412,8 +416,8 @@ signatures. So the pipeline is: Ziren produces a hash-based STARK proof, that
 proof is wrapped into a constant-size Groth16 proof over BN254, and the Groth16
 verifier is what BitVM2 runs in Bitcoin script.
 
-But the STARK core is not post-quantum either. FRI and Poseidon are
-hash-based, so the core looks safe; the code says otherwise. Ziren issue
+The STARK core, however, is not post-quantum either. FRI and Poseidon are
+hash-based, so the core appears safe; the issue tracker records otherwise. Ziren issue
 [#276](https://github.com/ProjectZKM/Ziren/issues/276), *"Replace hash-to-curve
 in multiset hash by quantum safe primitives"*, open since 2025-08-14:
 
@@ -444,8 +448,7 @@ already built it. It remains ZKM's work rather than something GOAT can fix in
 over a DLOG-dependent execution proof buys nothing), but it should be read as a
 dependency to track and support, not as an open research problem.
 
-A second solution exists, and it should be marked as one: revert the memory
-argument to LogUp. Ziren's own design documents record that memory consistency
+A second solution exists: reverting the memory argument to LogUp. Ziren's own design documents record that memory consistency
 was a LogUp lookup between the global and local memory tables before the
 multiset hash replaced it, and Ziren still uses LogUp for every other cross-chip
 check, so the machinery is in the tree today. A LogUp memory argument, with GKR
@@ -499,11 +502,11 @@ engineering question, and it should be measured before it is decided.
 
 ## 9. The on-chain Groth16 verifier: script, garbling, witness encryption
 
-This is one topic, not three. Every design in this line answers the same
-question, *how is a Bitcoin script convinced that a Groth16 proof verified*,
-and each generation pushes the pairing arithmetic further off chain. Reading
-them together is what makes the post-quantum content visible, because the thing
-that moves is the *execution* and the thing that never moves is the *assertion*.
+The designs treated here form a single line of work. Each answers the
+same question, *how is a Bitcoin script convinced that a Groth16 proof
+verified*, and each generation pushes the pairing arithmetic further off chain.
+Read together, they show that what varies across generations is the *execution*
+of verification, while the *assertion* being verified is invariant.
 
 | Generation | Mechanism | Cost it attacks | Relation asserted |
 | --- | --- | --- | --- |
@@ -512,10 +515,10 @@ that moves is the *execution* and the thing that never moves is the *assertion*.
 | [BABE](https://eprint.iacr.org/2026/065) | witness encryption for linear pairing relations, plus a garbled EC scalar-mul for the non-linear part | off-chain storage and setup, **~1000× lower** than BitVM3 | Groth16 / BN254 |
 | [Deferred Binding](https://hackmd.io/@goatresearch/HkKp2g1Zfl) (GOAT) | BABE extended so part of the public input may be fixed *after* garbling | makes BABE usable when L2 state is only known at peg-out | Groth16 / BN254 |
 
-The right-hand column never changes, and everything below is
-the evidence for that.
+The right-hand column is constant across all four generations; the remainder
+of this section documents that invariance.
 
-### The lineage, and where GOAT sits in it
+### The design lineage and GOAT's position in it
 
 [BABE](https://eprint.iacr.org/2026/065) (Garg, Kolonelos, Sergeevitch, Sridhar
 and Tse) states the motivation plainly: BitVM2 "suffers from very high on-chain
@@ -552,7 +555,7 @@ crate and a
 [`babe-programs`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3/babe-programs)
 workspace alongside the older `garbled-snark-verifier`.
 
-### What the scheme actually encrypts against
+### The relation the scheme encrypts against
 
 The design doc fixes the relation in its first paragraph: a Type-III pairing on
 BN254, with the verifier accepting iff
@@ -569,21 +572,21 @@ the Groth16 equation above*), and then unmasks `msg`.
 
 So the witness that unlocks the payout is a valid Groth16 proof over BN254, and
 the correctness property of the scheme guarantees that anyone holding one can
-decrypt. This is the design working as intended; it is also the entire
-post-quantum problem.
+decrypt. This behaviour is the scheme's intended correctness property; it is
+also the source of the post-quantum exposure.
 
-The on-chain side genuinely is hash-based. The doc is explicit that Bitcoin
+The on-chain side is, as claimed, hash-based. The doc is explicit that Bitcoin
 script is used only for hash commitments to `(ct_2, ct_3)`, gate-by-gate
 garbled-circuit unlocking, and "a hashlock on `msg` gating the final
 UTXO spend", concluding: "No pairings or target-group arithmetic are evaluated
 on chain." Every on-chain primitive here (hashlocks, Lamport commitments, the
-garbling) survives Shor. That is exactly what makes the composition
-misleading.
+garbling) survives Shor. That is what makes the composition easy to
+misclassify.
 
-### The audit: the security theorem names discrete log
+### The security reduction and its discrete-logarithm terms
 
-The usual way to argue this section would be inference. It is not necessary
-here, because GOAT's own security analysis states the reduction:
+No inference is required here: GOAT's own security analysis states the
+reduction directly:
 
 ```text
 Adv_pbWE(lambda)  <=  Adv_BABE(lambda)  +  Adv_DLog[G1](lambda)
@@ -596,8 +599,8 @@ challenges with a shared scalar". The conclusion states the assumption set:
 "The reduction stays within standard BABE assumptions plus GC-security and
 Lamport one-wayness."
 
-Read that against Shor. `Adv_DLog[G1]` on BN254
-goes to 1 against a cryptographically relevant quantum computer, and
+Against a cryptographically relevant quantum computer, `Adv_DLog[G1]` on BN254
+goes to 1, and
 `Adv_BABE` rests on the same curve. The bound does not
 degrade gracefully: it becomes vacuous. Concretely, an adversary who can solve
 discrete log on BN254 forges a Groth16 proof for a peg-out that never happened,
@@ -605,17 +608,17 @@ decrypts `msg` through the scheme's own correctness property, and
 spends the hashlocked UTXO. No garbling is broken, no hash is inverted, and no
 step of the protocol misbehaves.
 
-This is the wrapper trap for the fourth time in one stack, and it is the
-most seductive instance yet. The first three (Winternitz commitments carrying a
+This is the fourth instance of the wrapper pitfall in this stack, and the least
+conspicuous. The first three (Winternitz commitments carrying a
 Groth16 proof, garbled circuits garbling a Groth16 verifier, and the prospective
-error of proving BLS verification inside `leanVM`, section 12) at least look
+error of proving BLS verification inside `leanVM`, section 13) at least look
 like wrappers. Here the vocabulary actively argues the other way: *witness
 encryption*, *garbled circuit*, *hashlock*, *Lamport* are all post-quantum-safe
-terms, three of the four on-chain primitives really are post-quantum, and the
+terms, three of the four on-chain primitives are indeed post-quantum, and the
 security proof is a clean reduction. The pairing survives in the *relation being
-encrypted against*, which is the one place the vocabulary never points.
+encrypted against*, which is the one place the terminology does not indicate.
 
-### Ziren sits on the dispute path
+### Ziren on the dispute path
 
 Deferred Binding needs *soldering* (translating garbled labels across
 cut-and-choose instances) and proves it in a zkVM. The
@@ -636,17 +639,17 @@ independent discrete-log dependency. Before this work, Ziren's exposure sat in
 the proving pipeline. It now also sits on the bridge's dispute path.
 
 Two DLog dependencies in one protocol, reached by different routes, is a
-planning fact: [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276)
+planning-relevant fact: [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276)
 and its [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
 prototype are now load-bearing for two surfaces, not one, which strengthens the
-case for phase 3 of the ordering in section 14.
+case for phase 3 of the ordering in section 15.
 
-One version detail worth recording, since it affects which Ziren fixes are
+One version detail affects which Ziren fixes are
 inherited: GOAT's note cites ZKM/Ziren 1.2.5, but `Cargo.lock` on
 `feat/goat-bitvm3` pins `zkm-sdk` and `zkm-zkvm` at 1.2.4, commit
 `d5b7577`.
 
-### The garbling parameter, now on the critical path
+### The garbling security parameter
 
 `LABEL_SIZE = 16` and the PRF is `Aes128`, in both
 `garbled-snark-verifier/src/core/utils.rs` and
@@ -664,10 +667,10 @@ depends on `ark-groth16`, `ark-bn254`, `ark-ec` and `ark-relations` *and* on
 `aes` and `blake3` (arkworks for the circuit being garbled, AES and BLAKE3 for
 the garbling machinery), and `verifiable-circuit-babe` carries the same arkworks
 set. `bitvm2-node`'s `gc-v2` branch (head `73cdb49`, 2026-07-22) still uses
-MuSig2 (8 files) and Taproot (9 files), so the key-path exposure of section 10 is
+MuSig2 (8 files) and Taproot (9 files), so the key-path exposure of section 11 is
 untouched by any of this.
 
-### Why this does not port to a Ziren STARK verifier
+### Non-transferability to a Ziren STARK verifier
 
 The natural next question is whether the same machinery can carry a hash-based
 verifier: witness-encrypt against Ziren's STARK instead of Groth16, and the
@@ -683,7 +686,7 @@ non-algebraic verification transcript. There is nothing for the ciphertext to be
 keyed to. Constructing the analogue would mean a witness encryption scheme for
 hash-based proof systems, which is not a parameter change but an open problem.
 
-That produces the strategic tension this section exists to name. BABE makes
+That produces a strategic tension. BABE makes
 Groth16 dramatically cheaper to verify on Bitcoin, which reduces the pressure to
 stop using Groth16, and stopping is the post-quantum requirement. The cost
 curve and the quantum curve point in opposite directions. Every increment of
@@ -692,11 +695,27 @@ statement, and section 8's conclusion still stands: `bitvm2-gc` is
 Groth16-oriented by construction, so moving off pairings is a rebuild of that
 component rather than a swap of a wrapper.
 
-### Remove the EC based proof verifier
+### Assessment
 
-The report says to remove the Groth16 verifier; it owes an answer to what takes
-its place. What decides the answer is not proof size but which opcodes Bitcoin
-has, and the rule is narrower than it first appears.
+The net effect of this line of work on the post-quantum position is nil, and it
+is not cost-free. Three observations support that assessment: the pairing
+assumption lives in the security theorem of the scheme that replaces the
+on-chain verifier, not merely in a script the bridge could swap out; Ziren's
+discrete-log dependency is load-bearing in two places, the proving pipeline and
+the dispute path; and the AES-128 garbling parameter gates the payout secret
+rather than sitting as an optimisation detail.
+
+None of this is an argument against BABE, which answers the question it was
+asked — on-chain cost — and produces an on-chain surface that is genuinely
+hash-based. It is an argument against *counting* it as post-quantum progress,
+and against the assumption that a future hash-based proof system can be dropped
+into the same protocol.
+
+## 10. Post-quantum replacements for the on-chain verifier
+
+If the Groth16 verifier is removed, something must take its place. What decides
+the choice is not proof size but which opcodes Bitcoin script provides, and the
+constraint is narrower than it first appears.
 
 Script can do arithmetic; it cannot hash a concatenation. There is no
 multiplication opcode (`OP_MUL`, `OP_DIV`, `OP_MOD`, `OP_LSHIFT` and
@@ -725,10 +744,10 @@ commitments from `Poseidon2KoalaBear<16>` through a `PaddingFreeSponge`, with
 `ROUNDS_F = 8` and `ROUNDS_P = 13`. Its Merkle trees and transcript are
 KoalaBear arithmetic, not SHA256 over concatenated bytes.
 
-That reopens the field. Both remaining candidates are expressible on the Bitcoin
-that exists.
+That reopens the field: both remaining candidate families are expressible
+under current consensus rules.
 
-#### FRI over an algebraic hash
+### FRI over an algebraic hash
 
 This is the proof GOAT already has. Ziren is a FRI zkVM committing through
 Poseidon2 over KoalaBear: its manifest pulls `p3-fri`, `p3-merkle-tree` and
@@ -738,8 +757,8 @@ the hasher as `Poseidon2KoalaBear<16>` through a `PaddingFreeSponge`, with
 verifier for proofs the bridge produces today: no new proof system, no change
 of prover, nothing to re-audit upstream.
 
-And it needs no `OP_CAT`. This is the point most likely to be doubted,
-because hashing is where concatenation normally enters. It does not enter here.
+The construction requires no `OP_CAT`. The claim calls for justification,
+because hashing is where concatenation normally enters; it does not enter here.
 A `PaddingFreeSponge<_, 16, 8, 8>` digest is eight KoalaBear field elements,
 not thirty-two bytes, so compressing two children feeds 8 + 8 = 16 field
 elements into a width-16 permutation: sixteen stack items handed to an
@@ -782,14 +801,14 @@ hash is one opcode where an algebraic hash is hundreds of emulated
 multiplications. `OP_CAT` is what makes FRI on Bitcoin *cheap*, not what makes it
 *possible*.
 
-A third family comes up often enough to address, mainly to say why it is not a
-separate row.
+A third family merits brief mention, if only to establish that it does not
+constitute a separate option.
 [BaseFold](https://eprint.iacr.org/2023/1705) generalises FRI to foldable codes
 and would verify through the same Merkle-and-transcript machinery over the same
 algebraic hash, so it lands in the FRI column on cost and inherits the same
 per-level hash. It changes the prover's options, not the script's.
 
-#### Module-lattice arguments
+### Module-lattice arguments
 
 Schemes in the LaBRADOR line commit algebraically (Ajtai/module-SIS
 commitments verified by ring arithmetic), so they have no hash in the opening at
@@ -814,9 +833,9 @@ upgrade, not whether one is available.
 
 Wrapping remains a fallback: proving inside a lattice argument that Ziren's STARK
 verified is sound rather than circular, because the wrapped statement is itself
-post-quantum. Unlike the Groth16 and BABE cases earlier in this section, the
+post-quantum. Unlike the Groth16 and BABE cases of section 9, the
 composition inherits a post-quantum assumption rather than laundering a broken
-one, so it is not the wrapper trap. But it costs a recursion layer that changing the
+one, so it is not the wrapper pitfall. But it costs a recursion layer that changing the
 commitment scheme does not.
 
 Against those, there is no per-level hash to pay, and proof sizes are the
@@ -834,7 +853,7 @@ evaluation proof rather than an R1CS proof, and
 [SALSAA](https://eprint.iacr.org/2025/2124)'s much-quoted 73 KB is one folding
 step on linear relations rather than a standalone proof, against 979 KB for
 its general-purpose argument at the same 2²⁸-element witness. So the comparison
-has to be made by measuring, which is where this section ends up anyway.
+has to be made by measuring.
 
 Both are viable without a soft fork, and the choice is a measurement rather
 than a research question. `OP_CAT` decides how *expensive* a hash-committed
@@ -846,10 +865,10 @@ it. Neither fits a single transaction,
 and neither needs to (BitVM already chunks a verifier across a disprove
 pattern), so the question is how many chunks each option costs.
 
-#### The whole verifier, measured
+### The full verifier, measured
 
-The permutation cost above is one hash. What a bridge actually runs is a whole
-verifier:
+The permutation cost above is one hash. What a bridge executes in a dispute is
+a full verifier:
 [`bitcoin-stark-verifier`](https://github.com/AppliedPQC/bitcoin-stark-verifier)
 adds a WHIR opening verifier on top of the Poseidon2 script, with zero uses of
 `OP_CAT` or any other disabled opcode. Its end-to-end test runs
@@ -863,14 +882,14 @@ of grinding, the verifier is 979 permutations, 560 MB, 140 full blocks. At
 *fewer queries, not cheaper ones*, because a query's depth is set by the domain
 size and not by λ.
 
-Four findings come out of it.
+Four observations follow from the measurement.
 
 Query work is 97.1% of the script, of which the Merkle paths are 60% and the
-leaf hashing 37%. The leaf hash is the larger surprise: binding an opened row to
+leaf hashing 37%. The leaf-hashing term is the less expected of the two: binding an opened row to
 its Merkle leaf (without which a spender can authenticate the committed leaf and
 fold a different row) costs eight permutations per query at folding factor 4, on
 top of the twenty-one the path costs. Sumcheck rounds at 95,100 bytes each are
-rounding error against that, and optimisation effort spent anywhere but hashing
+negligible against that, and optimisation effort spent anywhere but hashing
 addresses 3% of the problem.
 
 Multilinear evaluation is exponential in the variable count, about
@@ -952,23 +971,7 @@ inside the script, or none at all if the challenge comes from BitVM's on-chain
 challenge-response rather than from a transcript, which would remove the largest
 cost in the FRI column and should be settled first.
 
-### Verdict
-
-Net effect on the post-quantum position: no progress, and not cost-free
-either. Three things are true of it: the pairing assumption lives in the security
-theorem of the scheme that replaces the on-chain verifier, not merely in a
-script the bridge could swap out; Ziren's discrete-log dependency is
-load-bearing in two places, the proving pipeline and the dispute path; and the
-AES-128 garbling parameter gates the payout secret rather than sitting as an
-optimisation detail.
-
-None of this is an argument against BABE. It is an excellent answer to the
-question it was asked, on-chain cost, and the on-chain surface it produces is
-genuinely hash-based. It is an argument against *counting* it as post-quantum
-progress, and against the assumption that a future hash-based proof system can
-be dropped into the same protocol.
-
-## 10. The peg's weakest quantum link is the Taproot key path
+## 11. Peg custody and the Taproot key path
 
 `crates/bitvm2-ga/src/committee/api.rs` shows the peg custody model directly:
 
@@ -997,7 +1000,7 @@ committee member, or waiting for a spend to reveal anything. It is
 strictly easier than attacking the Groth16 wrapper, and it is the textbook
 long-exposure case that BIP-360 exists to remove.
 
-The obvious mitigation does not work, and the reason matters. A natural
+One apparent mitigation is ineffective, and the reason generalises. A natural
 move is to commit a provably unspendable NUMS point as the Taproot internal key,
 disabling the key path and leaving only script paths, the construction BIP-360
 proposes to standardise. Against a quantum adversary it buys nothing. A Taproot
@@ -1013,7 +1016,7 @@ convention: it defines an output type in which no curve point is committed at
 all. The removal of the key path is the protection, and it cannot be obtained by
 choosing a different internal key.
 
-So the sharper statement is structural. Any Taproot output is inherently
+The stronger statement is structural. Any Taproot output is inherently
 long-exposure, because `Q` is committed when the output is created and `Q` alone
 is sufficient to spend it. No key choice changes that. What would change it is a
 hash-committed output type (which BitVM2 cannot use, because it needs script
@@ -1023,13 +1026,13 @@ What is available unilaterally is bounding the window, not closing it. The
 exposure is proportional to how long value sits in a Taproot UTXO, so peg
 policy (rotating custody outputs on a schedule, capping the value in any one
 output, avoiding long-lived connector outputs) reduces the attack surface
-without waiting on anyone. That is worth doing and worth writing down as policy,
-but it should be ranked as risk-bounding rather than as a fix, and it does not
-displace the proof-system work.
+without waiting on anyone. Such policy is advisable and should be recorded
+explicitly, but it should be ranked as risk-bounding rather than as a fix, and
+it does not displace the proof-system work.
 
-## 11. goat: relayer and consensus
+## 12. goat: relayer and consensus
 
-This is where the best return is.
+The surfaces in this section admit the least costly migrations in the stack.
 
 Relayer attestation keys
 ([`x/relayer/types/pubkey.go`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/types/pubkey.go))
@@ -1056,7 +1059,7 @@ consensus key type, opt-in behind
 shipping in the same release. GOAT pins SDK v0.53.8 from upstream, so this is
 a dependency upgrade across two minors rather than a fork rebase.
 
-This needs showing, because `go.mod` reads the other way at a glance. The
+This requires demonstration, because `go.mod` suggests otherwise at first reading. The
 `replace` block carries a local-path SDK line that is commented out, next to
 an EVM line that is live:
 
@@ -1096,8 +1099,7 @@ aggregated them: a commit is an array of one signature per validator (section 6)
 so adopting ML-DSA-65 costs bytes in proportion to the validator set and nothing
 else. The work is a dependency upgrade and a block-parameter re-tune.
 
-The relayer vote key is the opposite case, and the distinction is easy to
-miss. Its aggregation is not inherited from Cosmos: it is GOAT's own code,
+The relayer vote key is the opposite case, and the distinction is subtle. Its aggregation is not inherited from Cosmos: it is GOAT's own code,
 [`pkg/crypto/blst.go`](https://github.com/GOATNetwork/goat/blob/main/pkg/crypto/blst.go)
 called from
 [`x/relayer/keeper/proposal.go:66`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/keeper/proposal.go#L66).
@@ -1112,9 +1114,9 @@ that dominates Cosmos post-quantum migration (enabling a key type counterparties
 cannot verify stops packet flow and expires the client) appears not to apply.
 This should be confirmed against deployment reality rather than `go.mod` alone.
 
-## 12. The relayer's BLS vote key
+## 13. The relayer's BLS vote key
 
-Section 11's recommendation addresses the attestation key. That is not the whole
+Section 12's recommendation addresses the attestation key. That is not the whole
 picture, because the relayer carries three distinct key types, not one:
 
 | Key | Scheme | Purpose |
@@ -1131,9 +1133,8 @@ SLH-DSA have no aggregation, so replacing BLS naively turns one signature into
 N, at 3309 bytes each. For twenty relayers that is roughly 66 KB where there was
 48 bytes.
 
-Aggregation is confirmed in use, not merely available. The presence of an
-aggregate API is weaker evidence than it appears; what settles it is the call
-site,
+That aggregation is in use, not merely available, is settled by the call site
+rather than by the presence of an aggregate API,
 [`x/relayer/keeper/proposal.go:66`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/keeper/proposal.go#L66):
 
 ```go
@@ -1154,12 +1155,12 @@ single `sigdoc`. Relayer consensus is therefore a threshold vote carried by one
 48-byte signature regardless of signer count. The bitmap design exists
 precisely so that signer count can grow.
 
-### `leanVM` is not a way to keep BLS
+### The limits of zkVM wrapping for BLS verification
 
-The obvious hope is to wrap the existing BLS verification in a post-quantum
+A natural approach is to wrap the existing BLS verification in a post-quantum
 zkVM: prove inside `leanVM` that the aggregate verified, and inherit the zkVM's
 hash-based soundness. That does not work, in two distinct senses, and the second
-is a restatement of this report's central trap.
+is a restatement of this report's central pitfall.
 
 Mechanically, there is nothing to build on. `leanEthereum/leanVM` contains no
 BLS or pairing code at all: searching its tree for `bls`, `pairing` and `bls12`
@@ -1180,7 +1181,7 @@ witness-encrypting against the Groth16 relation (section 9): the fourth
 instance in this one stack, and the only one that would be a *prospective*
 mistake rather than an existing one.
 
-What `leanVM` actually offers is the removal of the need for BLS. BLS was
+What `leanVM` offers is the removal of the need for BLS. BLS was
 chosen for one property, aggregation. Hash-based signatures are post-quantum but
 do not aggregate. Recursive proving restores that property. The path is
 therefore:
@@ -1200,7 +1201,7 @@ stack, so the ingredients are unusually close to hand, but this is an
 architectural workstream, not a key-type change, and it should be planned
 separately from the attestation-key work.
 
-### Threshold signing is the other route, and it preserves the on-chain shape
+### Threshold signing
 
 Recursion is not the only way to recover what BLS provided. The requirement at
 `proposal.go:66` is narrower than *aggregation* in the general sense: it is many
@@ -1236,8 +1237,8 @@ argues for sequencing the attestation key, which needs no aggregation at all,
 ahead of the vote key.
 
 The third possibility is post-hoc *signature* aggregation: squash N existing
-ML-DSA signatures into one small object without changing how anyone signs. It
-is the option that sounds best and works worst.
+ML-DSA signatures into one small object without changing how anyone signs. It is
+also the least developed of the three.
 [Boudgoust and Takahashi](https://eprint.iacr.org/2023/159) (ESORICS 2023) gave
 the first Fiat-Shamir-with-aborts aggregate signature, applicable to Dilithium,
 and report "quite small compression rates" in their own words; it also aggregates
@@ -1248,7 +1249,7 @@ design signal: if aggregability is a first-order requirement, it is an argument
 about *which* post-quantum scheme to adopt, not a problem to be solved after
 adopting ML-DSA.
 
-## 13. goat-geth: the divergence, measured
+## 14. goat-geth: the divergence, measured
 
 Comparing
 [`GOATNetwork:goat-geth:dev`](https://github.com/GOATNetwork/goat-geth) against
@@ -1268,10 +1269,9 @@ behind is the number that matters for planning: any post-quantum work on the
 execution layer inherits an upstream catch-up first, and that catch-up will only
 grow.
 
-### The EVM's cryptographic substrate is the real exposure here
+### The EVM's cryptographic substrate
 
-Treating this surface as "accounts use ECDSA, follow Ethereum" understates it
-badly. The EVM exposes elliptic-curve and pairing operations as *consensus-level
+Treating this surface as "accounts use ECDSA, follow Ethereum" understates it. The EVM exposes elliptic-curve and pairing operations as *consensus-level
 precompiles*, and
 [`core/vm/contracts.go`](https://github.com/GOATNetwork/goat-geth/blob/dev/core/vm/contracts.go)
 in `goat-geth` carries the full upstream set:
@@ -1322,7 +1322,7 @@ The generalisable rule is therefore sharper than "precompiles are unmigratable":
 are in the second, and a search of the EIPs repository returns no proposal to
 deprecate or replace any of them.
 
-### The caller set, not the precompile, is the unit of analysis
+### The caller set as the unit of analysis
 
 Ethereum's own coverage is uneven in a way that turns out to be informative.
 `ecRecover` has a plan. KZG has a stated plan: the roadmap acknowledges that
@@ -1346,10 +1346,10 @@ A bounded set of maintained callers can be coordinated through an upgrade. An
 unbounded set of abandoned contracts cannot, by anyone, at any price. This is why
 the plans exist where they exist.
 
-### What that means in practice
+### Practical consequences
 
-For stateless precompiles with unbounded callers, the levers are all
-unattractive and worth naming honestly:
+For stateless precompiles with unbounded callers, the available levers are
+limited:
 
 - Additive only: ship post-quantum precompiles alongside the old ones, as
   EIP-7885 proposes. This is the actual plan. It solves the *forward* problem
@@ -1397,9 +1397,9 @@ account-semantics question, and it should not inherit that low priority.
 
 ---
 
-# Part IV: What to do
+# Part IV: Recommendations
 
-## 14. Ordering the work
+## 15. Ordering the work
 
 Ownership and severity, not novelty, should set the
 order:
@@ -1438,20 +1438,20 @@ Applied to GOAT:
 | --- | --- | --- |
 | 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The `VerifySign` 64-byte gate shows these assumptions are load-bearing and invisible |
 | 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
-| 2 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 10). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
+| 2 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 11). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
 | 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working 39-file prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
-| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 9 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
+| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 10 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
 | 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
 
 ---
 
-# Part V: Traps and open items
+# Part V: Pitfalls and open items
 
-## 15. Recurring traps
+## 16. Recurring pitfalls
 
-Collected from the analysis so far; each cost real effort to notice.
+The following patterns recur throughout the preceding analysis.
 
 - Fixed-length signature checks. Code that validates `len(sig) == 64` is
   structurally incapable of accepting a post-quantum signature. ML-DSA-65
@@ -1490,7 +1490,7 @@ Collected from the analysis so far; each cost real effort to notice.
   garbling or proving stack purpose-built for one verifier makes the proof
   system a structural property rather than a configuration choice: swapping it
   is a rebuild of that component, and the dependency graph will not show this.
-- The wrapper trap runs forwards as well as backwards. It is easy to spot
+- The wrapper pitfall runs forwards as well as backwards. It is easy to spot
   in existing code (a hash-based commitment carrying a curve assertion), and
   just as easy to *introduce* while migrating, by wrapping a broken primitive in
   a post-quantum proof system and treating the composition as fixed. Proving
@@ -1498,7 +1498,7 @@ Collected from the analysis so far; each cost real effort to notice.
   A migration step only helps if it changes what is asserted, not merely who
   attests to it.
 - Read the security theorem, not the primitive list. The sharpest version of
-  the wrapper trap hides behind vocabulary that is entirely post-quantum-safe.
+  the wrapper pitfall hides behind vocabulary that is entirely post-quantum-safe.
   A scheme built from witness encryption, garbled circuits, hashlocks and
   Lamport commitments can still reduce to elliptic-curve discrete log, because
   the pairing survives in the *relation being encrypted against* rather than in
@@ -1528,9 +1528,9 @@ Collected from the analysis so far; each cost real effort to notice.
   enabling a new key type before counterparties can verify it breaks
   connectivity, and the failure is silent at upgrade time.
 
-## Remaining open items
+## 17. Remaining open items
 
-Honestly short, and none of them block the recommendations:
+The list is short, and none of its items blocks the recommendations:
 
 - The 37 `goat-geth` commits were classified by file area, not read line by
   line. Nothing in the changed areas is cryptographic, but a deliberate check of
@@ -1573,7 +1573,7 @@ Honestly short, and none of them block the recommendations:
 Primary sources, each verified live: the base-layer and GOAT sources on
 2026-07-31, the aggregation sources on 2026-08-01, the script-cost sources on
 2026-08-02, and, on 2026-08-10, `goat`'s `go.mod` `replace` block and every
-script figure in section 9, which were re-measured rather than re-read.
+script figure in section 10, which were re-measured rather than re-read.
 
 - BIP-360, *Pay-to-Merkle-Root (P2MR)* — <https://github.com/bitcoin/bips/blob/master/bip-0360.mediawiki>
 - BIP-361, *Post Quantum Migration and Legacy Signature Sunset* — <https://github.com/bitcoin/bips/blob/master/bip-0361.mediawiki>
@@ -1615,7 +1615,7 @@ script figure in section 9, which were re-measured rather than re-read.
 - S. Papini, U. Haböck, *Improving logarithmic derivative lookups using GKR* (LogUp-GKR) — <https://eprint.iacr.org/2023/1284>
 - Ziren, `crates/primitives/src/lib.rs` (`Poseidon2KoalaBear<16>`, `ROUNDS_F = 8`, `ROUNDS_P = 13`) — <https://github.com/ProjectZKM/Ziren>
 - *Greyhound: Fast Polynomial Commitments from Lattices* — <https://eprint.iacr.org/2024/1293>
-- `AppliedPQC/bitcoin-stark-verifier` — Poseidon2 and a WHIR opening verifier in Bitcoin script, without `OP_CAT`; source of every script-size figure in section 9 — <https://github.com/AppliedPQC/bitcoin-stark-verifier>
+- `AppliedPQC/bitcoin-stark-verifier` — Poseidon2 and a WHIR opening verifier in Bitcoin script, without `OP_CAT`; source of every script-size figure in section 10 — <https://github.com/AppliedPQC/bitcoin-stark-verifier>
 - Plonky3 — the WHIR prover and KoalaBear Poseidon2 instance the measurements are taken against — <https://github.com/Plonky3/Plonky3>
 - Bitcoin Core, `src/consensus/consensus.h` (`MAX_BLOCK_WEIGHT`) — <https://github.com/bitcoin/bitcoin/blob/master/src/consensus/consensus.h>
 - BIP-347, *OP_CAT in Tapscript* (E. Heilman, A. Sabouri; Consensus soft fork, Complete, not activated) — <https://github.com/bitcoin/bips/blob/master/bip-0347.mediawiki>
