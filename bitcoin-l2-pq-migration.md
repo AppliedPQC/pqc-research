@@ -224,40 +224,25 @@ Cosmos SDK v0.55 registers
 [ML-DSA-65 (FIPS 204)](https://docs.cosmos.network/sdk/latest/keys/post-quantum-keys)
 as a supported validator consensus key type. This is shipped code, not a
 proposal ([PR #26436](https://github.com/cosmos/cosmos-sdk/pull/26436)): the
-`cosmos.crypto.mldsa65` proto package is in the tree, Amino routes and the
-`hd.MlDsa65Type` constant are enabled by default, `x/auth` gained a
-`SigVerifyCostMlDsa65` parameter, and `init`/`testnet` accept
-`--consensus-key-algo ml_dsa_65`.
+key type, its wiring and its gas parameters ship enabled by default, and the
+chain tooling accepts it at initialisation.
 
-It is deliberately *opt-in*: `genesis.consensus_params.validator.pub_key_types`
-still defaults to `["ed25519"]`, so nothing changes for an existing chain until
+It is deliberately *opt-in*: the set of validator key types a chain permits
+still defaults to ed25519 alone, so nothing changes for an existing chain until
 its governance says so. Existing chains can combine the new key type with
 validator consensus key rotation, which ships enabled in the same release, to
 move validators onto post-quantum keys without a new genesis.
 
 The size consequences are stated plainly and match FIPS 204 exactly: public keys
 grow from 32 to 1952 bytes and signatures from 64 to 3309 bytes, roughly 60x and
-50x. CometBFT's `MaxSignatureSize` and per-validator `MaxCommitSigBytes` were
-raised to accommodate them, and chains are told to revisit
-`consensus_params.block.max_bytes` and gossip framing limits.
+50x. CometBFT's per-signature and per-validator commit budgets were raised to
+accommodate them, and chains are told to revisit block-size and gossip framing
+limits.
 
-And the cost is linear, because CometBFT does not aggregate. The word
-*per-validator* in that parameter name is literal. A commit
-([`types/block.go`](https://github.com/cometbft/cometbft/blob/main/types/block.go))
-carries one signature for each validator that voted:
-
-```go
-type Commit struct {
-    Signatures []CommitSig     // in validator-address order
-}
-type CommitSig struct {
-    BlockIDFlag, ValidatorAddress, Timestamp, Signature
-}
-func MaxCommitBytes(valCount int) int64
-```
-
-There is no aggregate to grow; there is an array whose length is the validator
-set. Signature bytes per commit therefore scale as N × 3309:
+And the cost is linear, because CometBFT does not aggregate: a commit carries
+one signature for each validator that voted, in validator-address order. There
+is no aggregate to grow; there is an array whose length is the validator set.
+Signature bytes per commit therefore scale as N × 3309:
 
 | Validators | ed25519 | ML-DSA-65 |
 | --- | --- | --- |
@@ -266,40 +251,20 @@ set. Signature bytes per commit therefore scale as N × 3309:
 | 150 | 9.6 KB | 496 KB |
 
 CometBFT's response to that arithmetic is more deliberate than the upgrade note
-suggests, and it is visible in two constants. `MaxSignatureSize` is not a fixed
-number but a maximum taken over every supported key type:
-
-```go
-var MaxSignatureSize = cmtmath.MaxInt(
-    cmtmath.MaxInt(ed25519.SignatureSize, bls12381.SignatureLength),
-    mldsa65.SignatureSize,
-)
-```
-
-so admitting ML-DSA-65 to the key-type set raises it from 96 to 3309 bytes
-globally. `MaxCommitSigBytes` then adds the address, flag, timestamp and proto
-framing on top of that, and
-[`DefaultBlockParams`](https://github.com/cometbft/cometbft/blob/main/types/params.go)
-budgets the worst-case commit *separately from application data*:
-
-```go
-// MaxBytes budgets 21MiB for data plus the worst-case commit for a
-// maximum-size validator set (MaxVotesCount validators at
-// MaxSignatureSize), so the default stays valid for any pub key type
-// and validator count.
-MaxBytes: 22020096 + MaxCommitBytes(MaxVotesCount), // ~53MiB
-```
-
-At `MaxVotesCount` of 10,000 that is 21 MiB of data plus roughly 32 MiB of
-commit headroom. The design choice is to make the commit budget explicit and
-size it for the worst case, rather than leave operators to discover the
-interaction. The proto-framing comment in the same file reasons directly
-about "ML-DSA-65's 3309-byte sigs", so this was sized for post-quantum keys on
-purpose.
+suggests. The maximum signature size is not a fixed number but a maximum taken
+over every supported key type, so admitting ML-DSA-65 to the key-type set
+raises it from 96 to 3309 bytes globally. The default block-size parameter then
+budgets the worst-case commit *separately from application data*: for a
+maximum-size validator set of 10,000, that is 21 MiB of data plus roughly
+32 MiB of commit headroom, about 53 MiB in total. The design choice is to make
+the commit budget explicit and size it for the worst case, rather than leave
+operators to discover the interaction; the source comments reason directly
+about ML-DSA-65's 3309-byte signatures, so this was sized for post-quantum
+keys on purpose.
 
 One consequence is less obvious: the maximum is
 over key types the build *supports*, not the ones a chain *enables*. Every chain
-on a CometBFT carrying `mldsa65` inherits the larger default block size whether
+on a CometBFT build that supports ML-DSA-65 inherits the larger default block size whether
 or not its validators ever use a post-quantum key. The cost of the option is
 paid by everyone; only the per-commit bytes are paid by adopters.
 
@@ -341,7 +306,7 @@ that the case study and the framework can be read against each other.
 | --- | --- | --- | --- | --- | --- |
 | 1 | Bitcoin L1 outputs | — | secp256k1 / Schnorr | broken by Shor | **Bitcoin, not GOAT** |
 | 1–2 | Peg custody | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | MuSig2 over a **Taproot key path** | broken by Shor, **and exposed from output creation** | **GOAT** |
-| 2 | Bridge attestation | [`goat`](https://github.com/GOATNetwork/goat) `x/relayer` | secp256k1 / Schnorr | broken by Shor | **GOAT** |
+| 2 | Bridge attestation | [`goat`](https://github.com/GOATNetwork/goat) relayer module | secp256k1 / Schnorr | broken by Shor | **GOAT** |
 | 3 | Bridge proof system | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | [Ziren](https://github.com/ProjectZKM/Ziren) STARK (**DLOG multiset memory check**) → **Groth16/BN254** wrap → garbled | broken at three layers | **GOAT and ZKM** |
 | 4 | Bridge bit commitments | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) → [BitVM](https://github.com/GOATNetwork/BitVM) | **Winternitz OTS** | **already PQ-safe** | — |
 | 5 | Consensus keys | [`goat`](https://github.com/GOATNetwork/goat) (CometBFT) | **secp256k1** | broken by Shor | **GOAT** |
@@ -357,21 +322,12 @@ rewrite into two contained swaps.
 
 ## 8. bitvm2-node: hash-based transport of elliptic-curve content
 
-[`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) is a Rust ZK bridge: crates for `bitcoin-light-client-circuit`,
-`header-chain`, `state-chain`, `commit-chain`, `bitvm2-ga`, with circuits for
-header-chain, state-chain, commit-chain and operator proofs. Its crypto
-dependencies are explicit in `Cargo.toml`:
-
-```toml
-ark-bn254   = "0.5.0"   # pairing-friendly curve
-ark-groth16 = "0.5.0"   # pairing-based SNARK
-musig2      = "0.1.0"
-secp256k1   = "0.29.1"
-sha2        = "0.10.9"
-bitvm       = { git = "https://github.com/GOATNetwork/BitVM.git", branch = "GA" }
-```
-
-Occurrence counts in the repository: `groth16` 24, `bn254` 15, `musig2` 11.
+[`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) is the bridge
+node: a Bitcoin light client and proof pipeline with circuits for the header
+chain, state chain, commit chain and operator claims. Its declared
+cryptographic dependencies are the Groth16 proof system over the
+pairing-friendly curve BN254, MuSig2 over secp256k1, SHA-2, and GOAT's fork of
+the BitVM script library.
 
 Consider first the quantum-vulnerable components. Groth16 over BN254 is a *pairing-based* proof system.
 Pairing-friendly curves fall to Shor exactly as ECDSA does, so a
@@ -383,36 +339,17 @@ over secp256k1, used for peg-out authorisation, is broken in the ordinary way.
 The remaining layer is hash-based, and it is structurally significant. BitVM2 carries values
 between Bitcoin script fragments using *bit commitments* implemented as
 Winternitz one-time signatures, hash-based and therefore post-quantum on the
-same conservative assumption as SLH-DSA. The
-[BitVM](https://github.com/GOATNetwork/BitVM) tree contains
-`bitvm/src/signatures/winternitz.rs`, `winternitz_hash.rs`,
-`signing_winternitz.rs` and `wots_api.rs`, and `bitvm2-node` references them
-from `crates/bitvm2-ga/src/types.rs` and `crates/bitvm2-ga/src/operator/api.rs`.
-
-> *Verification note.* A GitHub *code search* for `winternitz` in
-> [`GOATNetwork/BitVM`](https://github.com/GOATNetwork/BitVM) returns zero hits,
-> which would suggest the opposite
-> conclusion. That is an artifact: GitHub code search does not index forks, and
-> `GOATNetwork/BitVM` is a fork of
-> [`BitVM/BitVM`](https://github.com/BitVM/BitVM). Listing the git tree directly
-> shows the files. Any audit relying on code search over this stack will
-> silently under-report.
+same conservative assumption as SLH-DSA. The implementation lives in GOAT's
+[BitVM](https://github.com/GOATNetwork/BitVM) fork and is referenced throughout
+the bridge node. (Establishing this required enumerating the git tree directly:
+GitHub code search does not index forks, a hazard recorded among the pitfalls
+of section 16.)
 
 Groth16 is a wrapper, not the proving system. `bitvm2-node` depends on
-[Ziren](https://github.com/ProjectZKM/Ziren) (`zkm-prover`, `zkm-verifier`,
-`zkm-sdk`, `zkm-zkvm`, and four more
-crates), and Ziren is a FRI/STARK zkVM: its whitepaper mentions FRI 31 times
-and STARK 19, over Poseidon and a small prime field. Occurrence counts in
-`bitvm2-node` are consistent with the standard pattern: `zkm` 93, `wrap` 87,
-`stark` 22, `groth16` 24. The types confirm what the Groth16 proof is *for*:
-
-```rust
-pub type Groth16Proof = ark_groth16::Proof<ark_bn254::Bn254>;
-pub type OperatorWotsSignatures = (GuestPubinSignatures, Groth16ProofSignatures);
-```
-
-The Groth16 proof elements are committed into Bitcoin script through Winternitz
-signatures. So the pipeline is: Ziren produces a hash-based STARK proof, that
+[Ziren](https://github.com/ProjectZKM/Ziren), a FRI/STARK zkVM over Poseidon
+and a small prime field, and the Groth16 proof elements are committed into
+Bitcoin script through Winternitz signatures. So the pipeline is: Ziren
+produces a hash-based STARK proof, that
 proof is wrapped into a constant-size Groth16 proof over BN254, and the Groth16
 verifier is what BitVM2 runs in Bitcoin script.
 
@@ -435,8 +372,7 @@ than attacking FRI, and the execution proof falls with it.
 
 The fix is a lattice-based multiset hash (LtHash), and it is already past the proposal stage.
 Ziren's [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
-branch (six commits over 39 files, last touched 2026-02-18, with commits
-reading *"replace ecmh by lthash multiset hash"*) reaches into the core machine and the
+branch prototypes the replacement, reaching into the core machine and the
 recursion circuits, following Zisk's
 [lattice-based multiset hashing](https://zisk.technology/secure-challenge-derivation-in-zisk/).
 
@@ -467,8 +403,8 @@ where the sharded challenge derivation is acceptable.
 
 And the garbling stack is built around Groth16 specifically. `bitvm2-gc` is
 not a general circuit garbler that happens to be pointed at Groth16; its
-headline crate is `garbled-snark-verifier` and its circuit tree is organised
-around `groth16.rs`, `bn254/`, `dv_snark.rs` and `dv_bn254/`. Swapping the proof
+principal component is a garbled *SNARK verifier*, and its circuit tree is
+organised around the Groth16/BN254 verification circuit. Swapping the proof
 system therefore means rebuilding the garbled-circuit stack around a different
 verifier rather than deleting a wrapper, which is the single largest
 item in this report.
@@ -549,11 +485,8 @@ resolves this with a Dual-Scalar Garbled Circuit whose two outputs,
 and proactive cryptographic binding on `x_D`", with `B` a verifier-chosen
 blinding point hidden inside the circuit. It is implemented, not proposed: the
 [`feat/goat-bitvm3`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3)
-branch of `bitvm2-gc` carries a
-[`verifiable-circuit-babe`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3/verifiable-circuit-babe)
-crate and a
-[`babe-programs`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3/babe-programs)
-workspace alongside the older `garbled-snark-verifier`.
+branch of `bitvm2-gc` carries the BABE implementation alongside the older
+garbled verifier.
 
 ### The relation the scheme encrypts against
 
@@ -564,11 +497,10 @@ BN254, with the verifier accepting iff
 e(pi_1, pi_2) = e(alpha, beta) * e(vk_x, gamma) * e(pi_3, delta_2)
 ```
 
-A ciphertext is `(gc_ct, adaptor, ct_2, ct_3)` with `ct_2 = r * delta_2`
-and `ct_3 = msg XOR H(r * Y)`, where
-`Y = e(alpha, beta) * e(vk_x, gamma)`. Decryption recovers
-`r * Y <- e(ct_1, pi_2) / e(pi_3, ct_2)` (a step *justified by
-the Groth16 equation above*), and then unmasks `msg`.
+A ciphertext masks the payout secret under a key derived from the verification
+equation's constants; decryption recovers that key by pairing the proof
+elements, a step *justified by the Groth16 equation above*, and then unmasks
+the secret.
 
 So the witness that unlocks the payout is a valid Groth16 proof over BN254, and
 the correctness property of the scheme guarantees that anyone holding one can
@@ -576,9 +508,9 @@ decrypt. This behaviour is the scheme's intended correctness property; it is
 also the source of the post-quantum exposure.
 
 The on-chain side is, as claimed, hash-based. The doc is explicit that Bitcoin
-script is used only for hash commitments to `(ct_2, ct_3)`, gate-by-gate
-garbled-circuit unlocking, and "a hashlock on `msg` gating the final
-UTXO spend", concluding: "No pairings or target-group arithmetic are evaluated
+script is used only for hash commitments to the ciphertext components,
+gate-by-gate garbled-circuit unlocking, and a hashlock on the payout secret
+gating the final UTXO spend, concluding: "No pairings or target-group arithmetic are evaluated
 on chain." Every on-chain primitive here (hashlocks, Lamport commitments, the
 garbling) survives Shor. That is what makes the composition easy to
 misclassify.
@@ -604,7 +536,7 @@ goes to 1, and
 `Adv_BABE` rests on the same curve. The bound does not
 degrade gracefully: it becomes vacuous. Concretely, an adversary who can solve
 discrete log on BN254 forges a Groth16 proof for a peg-out that never happened,
-decrypts `msg` through the scheme's own correctness property, and
+decrypts the payout secret through the scheme's own correctness property, and
 spends the hashlocked UTXO. No garbling is broken, no hash is inverted, and no
 step of the protocol misbehaves.
 
@@ -621,13 +553,9 @@ encrypted against*, which is the one place the terminology does not indicate.
 ### Ziren on the dispute path
 
 Deferred Binding needs *soldering* (translating garbled labels across
-cut-and-choose instances) and proves it in a zkVM. The
-[`babe-programs`](https://github.com/GOATNetwork/bitvm2-gc/tree/feat/goat-bitvm3/babe-programs)
-workspace has `soldering/guest` and `soldering/host` members, and the guest is a
-Ziren program: it depends on `zkm-zkvm` from `ProjectZKM/Ziren`, reads a
-`SolderedWiresInput`, and commits `SolderedLabelsData`. The workspace pulls
-`zkm-build`, `zkm-sdk`, `zkm-zkvm` and `poseidon2` from ZKM. GOAT's note reports
-the resulting STARK proof at 56.92 MB over 93,867,321 cycles.
+cut-and-choose instances) and proves it in a zkVM: the soldering program in the
+BABE implementation is a Ziren guest. GOAT's note reports the resulting STARK
+proof at 56.92 MB over roughly 94 million cycles.
 
 That has a consequence the note does not draw. Ziren's offline memory-consistency
 argument rests on an elliptic-curve multiset hash, the ECMH construction of
@@ -644,16 +572,13 @@ and its [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
 prototype are now load-bearing for two surfaces, not one, which strengthens the
 case for phase 3 of the ordering in section 15.
 
-One version detail affects which Ziren fixes are
-inherited: GOAT's note cites ZKM/Ziren 1.2.5, but `Cargo.lock` on
-`feat/goat-bitvm3` pins `zkm-sdk` and `zkm-zkvm` at 1.2.4, commit
-`d5b7577`.
+One version detail affects which Ziren fixes are inherited: GOAT's note cites
+Ziren 1.2.5, but the implementation pins 1.2.4.
 
 ### The garbling security parameter
 
-`LABEL_SIZE = 16` and the PRF is `Aes128`, in both
-`garbled-snark-verifier/src/core/utils.rs` and
-`verifiable-circuit-babe/src/gc/utils.rs`. 128-bit labels under AES-128 put the
+The garbling layer uses 128-bit wire labels under an AES-128 PRF, in both the
+older garbled verifier and the BABE implementation. 128-bit labels under AES-128 put the
 garbling layer at NIST post-quantum security category 1, the floor of the
 approved range, since Grover search over a 128-bit space is the reference for
 that category. That was a defensible default when garbling was an optimisation.
@@ -662,13 +587,11 @@ the decision deserves to be made explicitly rather than inherited. Moving labels
 and PRF to 256-bit restores category-5 margin at roughly double the garbling
 cost.
 
-The rest of `bitvm2-gc` is unchanged in character. `garbled-snark-verifier`
-depends on `ark-groth16`, `ark-bn254`, `ark-ec` and `ark-relations` *and* on
-`aes` and `blake3` (arkworks for the circuit being garbled, AES and BLAKE3 for
-the garbling machinery), and `verifiable-circuit-babe` carries the same arkworks
-set. `bitvm2-node`'s `gc-v2` branch (head `73cdb49`, 2026-07-22) still uses
-MuSig2 (8 files) and Taproot (9 files), so the key-path exposure of section 11 is
-untouched by any of this.
+The rest of `bitvm2-gc` is unchanged in character: the circuit being garbled
+remains the Groth16/BN254 verifier, with symmetric primitives appearing only
+in the garbling machinery, and the bridge node still authorises peg-outs with
+MuSig2 over Taproot, so the key-path exposure of section 11 is untouched by
+any of this.
 
 ### Non-transferability to a Ziren STARK verifier
 
@@ -718,13 +641,11 @@ the choice is not proof size but which opcodes Bitcoin script provides, and the
 constraint is narrower than it first appears.
 
 Script can do arithmetic; it cannot hash a concatenation. There is no
-multiplication opcode (`OP_MUL`, `OP_DIV`, `OP_MOD`, `OP_LSHIFT` and
-`OP_RSHIFT` are disabled), so multiplication is emulated by double-and-add, and
-[BitVM](https://github.com/bitvm/bitvm) does exactly that in
-`bitvm/src/bigint/mul.rs`, decomposing one operand to bits and looping over a
-limbed integer. It works at 254 bits today: the whole Groth16 verifier BitVM2
-puts in script is built from `bigint`, `bn254`, `u32` and `u4`, and contains
-zero uses of `OP_CAT`. Emulated modular arithmetic needs no consensus
+multiplication opcode (`OP_MUL` and its relatives are disabled), so
+multiplication is emulated by double-and-add, and
+[BitVM](https://github.com/bitvm/bitvm) already does this at 254 bits: the
+whole Groth16 verifier BitVM2 puts in script is emulated multi-limb modular
+arithmetic, with no use of `OP_CAT`. Emulated modular arithmetic needs no consensus
 change. Concatenation does: `OP_CAT`, `OP_SUBSTR`, `OP_LEFT` and `OP_RIGHT` are
 all disabled, so a script cannot assemble the two-child preimage that a
 SHA256 Merkle step hashes.
@@ -739,30 +660,26 @@ permutation over field elements, so hashing becomes multiplication and addition,
 which is the operation script already emulates. Choose the algebraic hash and
 the soft-fork dependency disappears.
 
-Ziren has already made that choice. `crates/primitives/src/lib.rs` builds its
-commitments from `Poseidon2KoalaBear<16>` through a `PaddingFreeSponge`, with
-`ROUNDS_F = 8` and `ROUNDS_P = 13`. Its Merkle trees and transcript are
-KoalaBear arithmetic, not SHA256 over concatenated bytes.
+Ziren has already made that choice: its commitments, Merkle trees and
+transcript are Poseidon2 over the KoalaBear field, not SHA-256 over
+concatenated bytes.
 
 That reopens the field: both remaining candidate families are expressible
 under current consensus rules.
 
 ### FRI over an algebraic hash
 
-This is the proof GOAT already has. Ziren is a FRI zkVM committing through
-Poseidon2 over KoalaBear: its manifest pulls `p3-fri`, `p3-merkle-tree` and
-`p3-commit` alongside `p3-koala-bear`, and `crates/primitives/src/lib.rs` builds
-the hasher as `Poseidon2KoalaBear<16>` through a `PaddingFreeSponge`, with
-`ROUNDS_F = 8` and `ROUNDS_P = 13`. Verifying it on Bitcoin means writing a
-verifier for proofs the bridge produces today: no new proof system, no change
-of prover, nothing to re-audit upstream.
+This is the proof GOAT already has: Ziren is a FRI zkVM committing through
+Poseidon2 over KoalaBear. Verifying it on Bitcoin means writing a verifier for
+proofs the bridge produces today: no new proof system, no change of prover,
+nothing to re-audit upstream.
 
 The construction requires no `OP_CAT`. The claim calls for justification,
 because hashing is where concatenation normally enters; it does not enter here.
-A `PaddingFreeSponge<_, 16, 8, 8>` digest is eight KoalaBear field elements,
-not thirty-two bytes, so compressing two children feeds 8 + 8 = 16 field
-elements into a width-16 permutation: sixteen stack items handed to an
-arithmetic routine. There is nothing to concatenate; the "concatenation" is the
+A sponge digest is eight field elements, not thirty-two bytes, so compressing
+two children feeds sixteen field elements into a width-16 permutation: sixteen
+stack items handed to an arithmetic routine. There is nothing to concatenate;
+the "concatenation" is the
 order the state sits in. With SHA256 the two children are two 32-byte items and
 `OP_SHA256` hashes only one item, so they must first be fused into a single
 64-byte item, and that is `OP_CAT`. The dependency belongs to the byte hash, not
@@ -775,24 +692,18 @@ multi-limb representation and no soft fork.
 The cost is the hash, and it is measured rather than estimated.
 [`bitcoin-stark-verifier`](https://github.com/AppliedPQC/bitcoin-stark-verifier)
 implements the permutation for [Plonky3](https://github.com/Plonky3/Plonky3)'s
-width-16 KoalaBear instance and emits 572,228 bytes, which in a taproot
-witness is the same number of weight units. That instance is `R_F = 8,
-R_P = 20`; Ziren's is `R_P = 13`, so a verifier targeting Ziren drops seven
-internal rounds and their linear layers, and the figure here is an upper bound
-for that case rather than the number itself. `MAX_STANDARD_TX_WEIGHT` is 400,000,
-so one permutation is 1.43 standard transactions, or 14.3% of a block, and a
-Merkle path costs one per level. The S-box dominates: a field multiplication is
-1,446 bytes, `x³` is two of them, and the permutation performs 148 cubings.
+width-16 KoalaBear instance at roughly 572 KB of script, which in a taproot
+witness is the same number of weight units: 1.43 standard transactions, or
+14.3% of a block, and a Merkle path costs one permutation per level. The
+measured instance uses more internal rounds than Ziren's, so the figure is an
+upper bound for a Ziren-targeted verifier. The S-box dominates the cost: the
+permutation performs 148 cubings, each built from emulated field
+multiplications.
 
-The number is a starting point rather than a floor. Three things in that
-implementation are known to be loose: the internal linear layer is emitted as a
-dense 16×16 matrix where it is structurally one sum and sixteen scalings, and it
-runs twenty times per permutation; multiplication is plain double-and-add where
-`rust-bitcoin-m31` reaches 1,060 weight units with a windowed table; and squaring
-uses the general multiplier. None of that changes the order of magnitude.
-
-A Merkle *level* costs 572,252 bytes (the permutation plus 24 bytes of child
-ordering), so a depth-21 path is 12,017,292 bytes, three full blocks.
+The number is a starting point rather than a floor: several known
+inefficiencies in the implementation leave room to reduce it, but none changes
+the order of magnitude. A depth-21 Merkle path is roughly 12 MB of script,
+three full blocks.
 
 This is also why
 [`bitcoin-circle-stark`](https://github.com/Bitcoin-Wildlife-Sanctuary/bitcoin-circle-stark)
@@ -825,10 +736,10 @@ thousands of times, which is the evidence the class of work is affordable.
 The second is about the prover, not the script. Ziren commits with FRI, so a
 lattice argument is a change to its polynomial commitment scheme: the commitment
 itself, the opening argument, and the recursion circuits that verify them. That
-is the diff, and it is a diff to a codebase already being changed in exactly this
-way: [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
-swaps ECMH for a lattice multiset hash across 39 files, reaching into the core
-machine and the recursion circuits. The question is the scope of a prover
+is the scope of the change, and Ziren is already being changed in exactly this
+way: the [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
+prototype swaps ECMH for a lattice multiset hash through the same core
+machinery and recursion circuits. The question is the scope of a prover
 upgrade, not whether one is available.
 
 Wrapping remains a fallback: proving inside a lattice argument that Ziren's STARK
@@ -915,38 +826,16 @@ negligible.
 > chain, which is why total size sets the setup cost and the number of segments
 > sets the challenge latency.
 
-Next, the chunk count, with the commitment layer priced. A step cannot be one
-Merkle level (that already exceeds `MAX_STANDARD_TX_WEIGHT` by 43%), so it has
-to be sub-permutation. A Poseidon2 permutation is a chain of 29 rounds, each
-taking a state and leaving a state, and the disprove script for one is 50,126
-bytes.
-
-That is the predicate, not the spend. A predicate over *supplied* states decides
-nothing about whose claim it is: a spender answers one challenge with one state
-and the next with another, and no predicate can tell. Binding it means taking
-both states from one-time signatures, which is 44 kB on top: Winternitz, which
-fits Bitcoin because a hash chain only ever hashes a single item, so `OP_HASH160`
-suffices and no soft fork is needed.
-
-The Winternitz parameter turns out to be forced from above rather than chosen.
-One chain per bit is the cheapest thing to verify and does not work: a committed
-state is 496 bits, so 505 chains, so 1,010 witness items against Bitcoin's
-stack limit of 1,000. The script fails before executing an opcode. At `w = 16`
-a state is 131 chains and two signatures are 524 items.
-
-The last saving is to commit at *chunk* boundaries rather than at every round,
-since a challenger only executes the run containing the disputed round:
-
-| | bytes | of a standard tx | commitments per permutation |
-| --- | ---: | ---: | ---: |
-| one committed round | 94,020 | 23.5% | 29 |
-| a 22-round chunk | **395,916** | **99.0%** | **2** |
-
-Twenty-two is longer than dividing the budget by a round suggests, because the
-rounds differ: an external round applies the S-box to all sixteen state elements
-and costs 50,028 bytes, an internal round applies it to one and costs 8,434, and
-the eight external rounds sit at opposite ends of the permutation so no window of
-22 contains more than four.
+Next, the chunk count, with the commitment layer priced. A disprove step
+cannot be one Merkle level, which already exceeds the standard transaction
+weight; it must be a fraction of a permutation. A round predicate over
+*supplied* states decides nothing about whose claim it is, so each chunk's
+input and output states must be bound by Winternitz one-time signatures —
+which fit Bitcoin without a soft fork, since a hash chain only ever hashes a
+single item — and the signature parameters are forced by the stack limit
+rather than chosen freely. Committing at chunk boundaries rather than at every
+round, a chunk of about 22 of the permutation's 29 rounds fills a standard
+transaction together with its two state commitments.
 
 The 80-bit, 20-variable verifier is then 1,990 chunks, and 100-bit at 16
 variables is 1,958.
@@ -973,22 +862,12 @@ cost in the FRI column and should be settled first.
 
 ## 11. Peg custody and the Taproot key path
 
-`crates/bitvm2-ga/src/committee/api.rs` shows the peg custody model directly:
-
-```rust
-pub type CommitteeSignatures = CommitteeMusig2Data<TaprootSignature>;
-...
-let n_of_n_taproot_public_key = ...;
-let connector_0 = Connector0::new(network, &n_of_n_taproot_public_key);
-```
-
-The committee aggregates MuSig2 partial signatures into a Taproot signature over
-an n-of-n aggregated Taproot public key, used by the BitVM2 connector
-outputs. MuSig2 producing a `TaprootSignature` over an aggregate key is the
-canonical key-path spend pattern; a script-path spend would not need
-aggregation. Script paths are present too (`TaprootBuilder::new().add_leaf(...)`
-with an internal key appears in the light-client crate), so the design uses
-both.
+The peg custody model is direct: the committee aggregates MuSig2 partial
+signatures into a Taproot signature over an n-of-n aggregated Taproot public
+key, used by the BitVM2 connector outputs. MuSig2 producing a Taproot
+signature over an aggregate key is the canonical key-path spend pattern; a
+script-path spend would not need aggregation. Script paths are present as
+well, so the design uses both.
 
 This is the sharpest exposure in the stack. A Taproot output commits its
 output key in the `scriptPubKey` at the moment the output is *created*, not when
@@ -1034,24 +913,14 @@ it does not displace the proof-system work.
 
 The surfaces in this section admit the least costly migrations in the stack.
 
-Relayer attestation keys
-([`x/relayer/types/pubkey.go`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/types/pubkey.go))
-are the bridge trust
-root, held as a protobuf `oneof` over `Secp256K1 | Schnorr`. The `oneof` is an
-extensibility point, so adding an ML-DSA-65 variant extends an existing pattern.
-The blocker is a fixed-length gate in `VerifySign`:
-
-```go
-// note: msg is 32 bytes, sig is 64 bytes
-if len(msg) != sha256.Size || len(sig) != schnorr.SignatureSize {
-    return false
-}
-```
-
-An ML-DSA-65 signature is 3309 bytes and its public key 1952 bytes, both
-confirmed against an independent ACVP-verified FIPS 204 implementation. Until
-that check is per-variant, the function is structurally incapable of accepting a
-post-quantum signature.
+Relayer attestation keys are the bridge trust root, held as a tagged union
+over secp256k1 and Schnorr. The union is an extensibility point, so adding an
+ML-DSA-65 variant extends an existing pattern. The blocker is a fixed-length
+gate in signature verification, which rejects any signature that is not
+exactly 64 bytes. An ML-DSA-65 signature is 3309 bytes and its public key
+1952 bytes, both confirmed against an independent ACVP-verified FIPS 204
+implementation. Until that check is per-variant, the verification path is
+structurally incapable of accepting a post-quantum signature.
 
 On consensus keys, Cosmos SDK v0.55 registers ML-DSA-65 as a validator
 consensus key type, opt-in behind
@@ -1059,38 +928,24 @@ consensus key type, opt-in behind
 shipping in the same release. GOAT pins SDK v0.53.8 from upstream, so this is
 a dependency upgrade across two minors rather than a fork rebase.
 
-This requires demonstration, because `go.mod` suggests otherwise at first reading. The
-`replace` block carries a local-path SDK line that is commented out, next to
-an EVM line that is live:
+This requires demonstration, because the dependency manifest suggests
+otherwise at first reading: it carries a commented-out fork substitution for
+the SDK next to a live one for the EVM client. So `goat-geth` is a real fork
+and the SDK fork is not part of this build. A search that does not distinguish
+the two concludes there are two forks, which inverts the schedule estimate for
+this row: a rebase is the critical path, an upgrade is not.
 
-```go
-replace (
-    // github.com/cosmos/cosmos-sdk => ../goat-cosmos-sdk
-    github.com/ethereum/go-ethereum => github.com/GOATNetwork/goat-geth v0.4.1
-)
-```
+GOAT's validators sign with secp256k1, not the Cosmos default of ed25519, and
+the mainnet genesis sets the permitted key types explicitly rather than
+inheriting a default. This changes nothing about the exposure, since both fall
+to Shor, but it does mean the migration lever is already in use: adopting
+ML-DSA-65 is an edit to a value the genesis already carries.
 
-So `goat-geth` is a real fork and `goat-cosmos-sdk` is not one in this build.
-Anything that greps for the module path finds both and concludes there are two
-forks, which inverts the schedule estimate for this row: a rebase is the critical
-path, an upgrade is not.
-
-GOAT's validators sign with secp256k1, not the Cosmos default of ed25519.
-[`cmd/goatd/cmd/modgen/init.go`](https://github.com/GOATNetwork/goat/blob/main/cmd/goatd/cmd/modgen/init.go)
-sets
-`consensusParam.Validator.PubKeyTypes = []string{cmttypes.ABCIPubKeyTypeSecp256k1}`,
-and the mainnet genesis agrees: `"pub_key_types": ["secp256k1"]`. This changes
-nothing about the exposure, since both fall to Shor, but it does mean the
-migration lever is already in use: the chain sets `pub_key_types` explicitly
-rather than inheriting a default, so adopting ML-DSA-65 is an edit to a value the
-genesis already carries.
-
-Two version facts bound that work. `go.mod` pins CometBFT v0.38.25, which
-predates both the ML-DSA-65 key type and the expanded signature budget described
-in section 6; that release does not even contain `crypto/bls12381`. And the same
-`init.go` sets `Block.MaxBytes = 50 * 1024 * 124`, which is 6,348,800 bytes,
-about 6 MiB; the arithmetic reads like an intended 50 MiB with a digit dropped
-from 1024. Whatever the intent, a chain moving to 3309-byte consensus signatures
+Two version facts bound that work. The pinned CometBFT release predates both
+the ML-DSA-65 key type and the expanded signature budget described in
+section 6. And the configured block-size limit is about 6 MiB, where the
+arithmetic that produces it suggests 50 MiB was intended. Whatever the intent,
+a chain moving to 3309-byte consensus signatures
 should confirm this number deliberately: at 6 MiB the commit is a materially
 larger fraction of the block than the CometBFT defaults assume.
 
@@ -1099,20 +954,18 @@ aggregated them: a commit is an array of one signature per validator (section 6)
 so adopting ML-DSA-65 costs bytes in proportion to the validator set and nothing
 else. The work is a dependency upgrade and a block-parameter re-tune.
 
-The relayer vote key is the opposite case, and the distinction is subtle. Its aggregation is not inherited from Cosmos: it is GOAT's own code,
-[`pkg/crypto/blst.go`](https://github.com/GOATNetwork/goat/blob/main/pkg/crypto/blst.go)
-called from
-[`x/relayer/keeper/proposal.go:66`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/keeper/proposal.go#L66).
-Upstream has
+The relayer vote key is the opposite case, and the distinction is subtle. Its
+aggregation is not inherited from Cosmos: it is GOAT's own code. Upstream has
 no aggregation to extend, and the attempts to add it have not landed, so no
 amount of tracking Cosmos releases produces an answer for this surface. It is
 GOAT's alone, and it is the one place in this stack where the post-quantum move
 costs a *property* rather than bytes.
 
-`ibc-go` does not appear in `goat`'s `go.mod`, so the IBC light-client hazard
-that dominates Cosmos post-quantum migration (enabling a key type counterparties
+The chain does not appear to use IBC, so the light-client hazard that
+dominates Cosmos post-quantum migration (enabling a key type counterparties
 cannot verify stops packet flow and expires the client) appears not to apply.
-This should be confirmed against deployment reality rather than `go.mod` alone.
+This should be confirmed against deployment reality rather than the dependency
+manifest alone.
 
 ## 13. The relayer's BLS vote key
 
@@ -1121,11 +974,11 @@ picture, because the relayer carries three distinct key types, not one:
 
 | Key | Scheme | Purpose |
 | --- | --- | --- |
-| `PublicKey` (`oneof`) | secp256k1 **or** Schnorr | attestation / proposals |
-| `TxKey` | secp256k1 | transaction authorisation |
-| `VoteKey` | **BLS12-381 G2, 96-byte compressed** | voting, verified via `AggregateVerify` |
+| attestation key (tagged union) | secp256k1 **or** Schnorr | attestation / proposals |
+| transaction key | secp256k1 | transaction authorisation |
+| vote key | **BLS12-381 G2, 96-byte compressed** | voting, verified in aggregate |
 
-Adding ML-DSA-65 to the `PublicKey` `oneof` remains correct and remains the
+Adding an ML-DSA-65 variant to the attestation key type remains correct and remains the
 cheapest first move, but it addresses only the attestation key. The vote key is a different problem, and a much harder one,
 because its value is aggregation. BLS lets N relayer votes verify as one
 48-byte signature. No standardised post-quantum signature aggregates: ML-DSA and
@@ -1133,27 +986,14 @@ SLH-DSA have no aggregation, so replacing BLS naively turns one signature into
 N, at 3309 bytes each. For twenty relayers that is roughly 66 KB where there was
 48 bytes.
 
-That aggregation is in use, not merely available, is settled by the call site
-rather than by the presence of an aggregate API,
-[`x/relayer/keeper/proposal.go:66`](https://github.com/GOATNetwork/goat/blob/main/x/relayer/keeper/proposal.go#L66):
-
-```go
-sigdoc := types.VoteSignDoc(req.MethodName(), sdkctx.ChainID(),
-                           relayer.Proposer, sequence, relayer.Epoch, req.VoteSigDoc())
-if !goatcrypto.AggregateVerify(pubkeys, sigdoc, req.GetVote().GetSignature()) {
-    return 0, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "verify aggregation signature failed")
-}
-```
-
-which resolves to `signature.FastAggregateVerify(true, pubkeys, msg, blsMode)` in
-`pkg/crypto/blst.go`. `FastAggregateVerify` is specifically the
-many-signers-one-message case, and the surrounding code confirms the shape: a
-participation bitmap selects voters, the proposer's `VoteKey` and each selected
-voter's are collected, participation is checked against `relayer.Threshold()`,
-and one aggregate signature is verified against N public keys over a
-single `sigdoc`. Relayer consensus is therefore a threshold vote carried by one
-48-byte signature regardless of signer count. The bitmap design exists
-precisely so that signer count can grow.
+That aggregation is in use, not merely available, is settled at the
+verification site rather than by the presence of an aggregate API. The
+verification is specifically the many-signers, one-message case: a
+participation bitmap selects voters, participation is checked against a
+threshold, and one aggregate signature is verified against the selected public
+keys over a single sign-document. Relayer consensus is therefore a threshold
+vote carried by one 48-byte signature regardless of signer count, and the
+bitmap design exists precisely so that signer count can grow.
 
 ### The limits of zkVM wrapping for BLS verification
 
@@ -1162,12 +1002,10 @@ zkVM: prove inside `leanVM` that the aggregate verified, and inherit the zkVM's
 hash-based soundness. That does not work, in two distinct senses, and the second
 is a restatement of this report's central pitfall.
 
-Mechanically, there is nothing to build on. `leanEthereum/leanVM` contains no
-BLS or pairing code at all: searching its tree for `bls`, `pairing` and `bls12`
-returns zero files. What it is built from is KoalaBear (505 references),
-Poseidon (75) and WHIR (48), with XMSS across 26 files and a dedicated
-`crates/rec_aggregation`. It is purpose-built to recursively aggregate
-*hash-based* signatures. A BLS verifier could be written as a guest program, but
+Mechanically, there is nothing to build on. `leanVM` contains no BLS or
+pairing code at all; it is built from KoalaBear field arithmetic, Poseidon,
+WHIR and XMSS, with recursive aggregation as a dedicated component. It is
+purpose-built to recursively aggregate *hash-based* signatures. A BLS verifier could be written as a guest program, but
 emulating BLS12-381 pairing arithmetic over a 31-bit field is precisely the work
 that EVM chains give a native precompile to avoid.
 
@@ -1194,7 +1032,7 @@ BLS                    hash-based signatures       + recursive aggregation
 not "keep BLS and add a zkVM". The ordering matters: the signature scheme is
 replaced first, and recursion recovers what the replacement costs.
 
-Concretely for GOAT, `AggregateVerify` at `proposal.go:66` is not wrapped, it is
+Concretely for GOAT, the aggregate verification is not wrapped, it is
 replaced, with the threshold-and-bitmap voting logic rebuilt around a hash-based
 scheme plus recursion. GOAT already operates a zkVM (Ziren) and a garbling
 stack, so the ingredients are unusually close to hand, but this is an
@@ -1203,8 +1041,8 @@ separately from the attestation-key work.
 
 ### Threshold signing
 
-Recursion is not the only way to recover what BLS provided. The requirement at
-`proposal.go:66` is narrower than *aggregation* in the general sense: it is many
+Recursion is not the only way to recover what BLS provided. The requirement is
+narrower than *aggregation* in the general sense: it is many
 signers, one message, verified against a threshold. That is the shape a
 threshold signature has natively (N parties jointly emit a single ordinary
 signature), and unlike aggregation it leaves the verifier untouched.
@@ -1251,19 +1089,11 @@ adopting ML-DSA.
 
 ## 14. goat-geth: the divergence, measured
 
-Comparing
-[`GOATNetwork:goat-geth:dev`](https://github.com/GOATNetwork/goat-geth) against
-[`ethereum/go-ethereum:master`](https://github.com/ethereum/go-ethereum):
-
-```
-status = diverged
-ahead_by  =  37     (GOAT's own commits)
-behind_by = 377     (upstream commits not merged)
-files changed = 78
-```
-
-Last push was 2026-03-31, roughly four months stale relative to the main `goat`
-repository. Thirty-seven custom commits over seventy-eight files is a tractable
+Measured against upstream
+[`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum),
+[`goat-geth`](https://github.com/GOATNetwork/goat-geth) is 37 commits ahead
+and 377 commits behind, with 78 files changed, and had not been pushed to for
+roughly four months at the time of measurement. Thirty-seven custom commits over seventy-eight files is a tractable
 amount of divergence: a customised fork, not a rewrite. But 377 commits
 behind is the number that matters for planning: any post-quantum work on the
 execution layer inherits an upstream catch-up first, and that catch-up will only
@@ -1272,9 +1102,7 @@ grow.
 ### The EVM's cryptographic substrate
 
 Treating this surface as "accounts use ECDSA, follow Ethereum" understates it. The EVM exposes elliptic-curve and pairing operations as *consensus-level
-precompiles*, and
-[`core/vm/contracts.go`](https://github.com/GOATNetwork/goat-geth/blob/dev/core/vm/contracts.go)
-in `goat-geth` carries the full upstream set:
+precompiles*, and `goat-geth` carries the full upstream set:
 
 | Address / type | Primitive | Quantum status |
 | --- | --- | --- |
@@ -1382,9 +1210,8 @@ through the BitVM2 Groth16 wrapper *and* on the EVM side through `bn256Pairing`.
 One broken assumption compromises the bridge from both directions, so the two
 should be tracked as a single dependency rather than two independent risks.
 
-GOAT's own changes do not touch this. Of the 37 commits, the changed files
-concentrate in `core/types` (23 files), `eth/tracers`, `eth/catalyst` and
-`core/goat`; the only configuration-adjacent file is `params/config.go`. The
+GOAT's own changes do not touch this. The fork's commits concentrate in type
+definitions, tracing and its own modules, none of it cryptographic, and the
 precompile set is inherited from upstream unchanged, which means the fix must
 also come from upstream, which is the concrete argument for closing the
 377-commit gap: the gap is the delivery channel for any future
@@ -1436,12 +1263,12 @@ Applied to GOAT:
 
 | Phase | Action | Why here |
 | --- | --- | --- |
-| 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The `VerifySign` 64-byte gate shows these assumptions are load-bearing and invisible |
-| 1 | Relayer: add ML-DSA-65 to the `PublicKey` `oneof`, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the `oneof` already supports it; dual signing gives rollback at every step |
+| 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The relayer's 64-byte signature gate shows these assumptions are load-bearing and invisible |
+| 1 | Relayer: add an ML-DSA-65 variant to the attestation key type, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the key type is already extensible; dual signing gives rollback at every step |
 | 2 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 11). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
-| 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working 39-file prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
+| 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
 | 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 10 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
-| 5 | Upgrade `cosmos-sdk` v0.53.8 → ≥ v0.55; opt into `ml_dsa_65`; rotate validators; re-tune `block.max_bytes` and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
+| 5 | Upgrade the Cosmos SDK to ≥ v0.55; opt into ML-DSA-65 consensus keys; rotate validators; re-tune block-size and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
 | 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
 
@@ -1533,9 +1360,9 @@ The following patterns recur throughout the preceding analysis.
 The list is short, and none of its items blocks the recommendations:
 
 - The 37 `goat-geth` commits were classified by file area, not read line by
-  line. Nothing in the changed areas is cryptographic, but a deliberate check of
-  `core/types` changes against consensus-critical serialisation would close it
-  fully.
+  line. Nothing in the changed areas is cryptographic, but a deliberate check
+  of the type-definition changes against consensus-critical serialisation
+  would close it fully.
 - Which deployed L2 contracts call the `0x06`–`0x08` and `0x0a` precompiles is
   not enumerated, and neither is the more important question of whether each
   caller is upgradeable. That needs chain state rather than source, and it is
@@ -1558,13 +1385,13 @@ The list is short, and none of its items blocks the recommendations:
   execution proof, and composes independent Merkle paths where the proof carries
   a pruned frontier. Both make it a lower bound; a batched verifier sharing
   internal nodes would be cheaper by some factor not yet established.
-- The chunk count prices the on-chain spend and the number of one-time keys, but
-  not generating them: 1,990 chunk boundaries at 131 chains each is roughly a
-  quarter of a million hash chains, which is the cost BitVM2 deployments
-  actually struggle with and is not estimated here.
-- The script figures are taken against Plonky3's Poseidon2 instance
-  (`R_P = 20`), not Ziren's (`R_P = 13`), so they are an upper bound for a
-  Ziren-targeted verifier by roughly the cost of seven internal rounds.
+- The chunk count prices the on-chain spend and the number of one-time keys,
+  but not generating them: the roughly 2,000 chunk boundaries require on the
+  order of a quarter of a million hash chains, which is the cost BitVM2
+  deployments actually struggle with and is not estimated here.
+- The script figures are measured against Plonky3's Poseidon2 instance, which
+  uses more internal rounds than Ziren's, so they are an upper bound for a
+  Ziren-targeted verifier.
 - No second L2 has been examined, so Part I's taxonomy is structural reasoning
   supported by one case, not a survey.
 
