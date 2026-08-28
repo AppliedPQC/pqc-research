@@ -137,7 +137,7 @@ BIP".
 
 That unresolved dependency is the central observation. Bitcoin has a hardening step and a deadline
 plan, and the deadline plan formally depends on a document that does not yet
-exist. Checked again on 2026-07-31: the BIPs index still contains exactly one
+exist as a BIP. Checked again on 2026-07-31: the BIPs index still contains exactly one
 post-quantum entry, BIP-361 itself. The exposure is not hypothetical: BIP-361
 states that as of 1 March 2026 over 34% of all bitcoin have revealed a public
 key on chain.
@@ -163,6 +163,81 @@ BIP-361's authors separately support an Hourglass-style proposal for those
 outputs. So the coins that genuinely become unspendable are the abandoned ones
 and the ones where no secret asymmetry exists, not the legacy supply as a
 whole.
+
+### The SHRINCS draft specification
+
+A candidate for that missing document was posted to the bitcoin-dev list on
+2026-08-27: [SHRINCS](https://groups.google.com/g/bitcoindev/c/HbVboXIFiG8)
+("Shrunken SPHINCS"), a hash-based scheme published as a
+[draft BIP](https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md) by a
+working group drawn from Blockstream, Brink, Cloudflare, OpenSats and OpenChain.
+The draft specifies cryptography only. It states that deployment cannot proceed
+"without introducing at least one new output type, which we do not define in this
+BIP", carries the disclaimer "Do NOT use in production", and lists test vectors,
+unit tests, a security proof and an optimised implementation as outstanding. The
+dependency has therefore moved from a document that does not exist to one that
+exists in draft and is explicitly incomplete.
+
+The construction places two signature schemes under one 48-byte public key and
+accepts a signature from either: a *stateful* path, a flexible XMSS tree (FXMSS)
+whose leaves are WOTS+C one-time keys, at 548 to 4,619 bytes; and a *stateless*
+path, SLH-DSA under a non-standard parameter set, at 5,777 bytes. The stateful
+path is primary, the stateless one a fallback for when signing state is lost or
+uncertain. The minimum combined public key and signature is 596 bytes, which the
+draft records as 13.23 times smaller than SLH-DSA-SHA2-128s and 6.26 times
+smaller than ML-DSA-44.
+
+The stateless path is SLH-DSA as specified in FIPS-205, with its signing and
+verification algorithms matching Algorithms 22 and 24, so an implementation
+supporting custom parameter sets can be reused. The parameters cut the hypertree
+from seven layers to five and reshape FORS from fourteen trees of height twelve
+to ten of height thirteen, reducing the signature budget from 2⁶⁴ to 2⁴⁰ and
+the signature from 7,856 to 5,776 bytes; 1,408 bytes of that saving come from the
+shorter hypertree and 672 from the reshaped FORS. The draft notes that SPHINCS+C
+or PORS+FP would give a further 15% at the same budget, and declines it to retain
+FIPS-205 implementation reuse and its existing analysis.
+
+The stateful path is not SPHINCS-derived. Its one-time signature is WOTS+C, which
+replaces the Winternitz checksum with a constant-sum encoding reached by grinding
+a 16-bit counter. That removes the three checksum chains, leaving 32 rather than
+the 35 of WOTS-TW, and makes the verifier's work identical in the worst and
+average case. FXMSS then leaves the tree shape to the signer, recorded as two
+bytes of shape and depth in the secret key and bound into secret-key derivation
+but not into verification: the verifier recomputes the root from the leaf
+position and authentication path alone, and has one code path for every shape.
+An unbalanced tree gives the smallest early signatures, 548 bytes, growing by 16
+or 17 bytes each as the authentication path lengthens and exhausting after
+depth + 1 signatures; a balanced tree of depth d gives 2ᵈ signatures of
+constant size, roughly 660 bytes at d = 8 and 854 at d = 20, at a
+key-generation cost that doubles with each level.
+
+The property that motivates the design for Bitcoin is verification cost per
+signature byte. The draft measures 0.465 SHA-256 compressions per byte for the
+stateful path and 0.483 for the stateless one, against 1.98 for BIP-340 Schnorr
+on the same benchmark, and states that this "leaves room for a witness discount
+that partly compensates for the larger signature size". The stateful parameters
+are chosen to hold that ratio close to the stateless one, so a single discount
+rule would cover both paths. Key generation and signing are correspondingly
+expensive: 3.1 × 10⁵ to 5.5 × 10⁸ compressions for key generation, and
+1.7 × 10⁶ for an average stateless signature.
+
+Statefulness is the cost. Reusing a state counter under one key lets anyone who
+observes both signatures forge, and the draft's rules are correspondingly strict:
+counters must not be backed up, restored, exported or used concurrently, and must
+be incremented in persistent storage before the signature is returned. Two
+mitigations distinguish the design from XMSS and LMS, which SP 800-208 declares
+"not suitable for general use". The stateless fallback is present in every key
+pair, so lost state costs signature size rather than access to funds, and an
+implementation that cannot establish its counter must refuse the stateful path.
+And each stateful signature discloses the leaf it used, so a repeated leaf under
+one public key is detectable before the second signature is broadcast.
+
+Two absences bear on the rest of this report. SHRINCS has no algebraic structure
+supporting public-key rerandomisation, so BIP-32 extended public keys have no
+direct analogue, and none supporting multi-signatures, so there is no MuSig-style
+aggregation. The peg custody of section 11 rests on exactly that second property,
+which places its post-quantum replacement outside what a hash-based output type
+provides on its own.
 
 ## 5. Ethereum: an aggregation problem at consensus, an account problem above it
 
@@ -1404,6 +1479,8 @@ script figure in section 10, which were re-measured rather than re-read.
 
 - BIP-360, *Pay-to-Merkle-Root (P2MR)* — <https://github.com/bitcoin/bips/blob/master/bip-0360.mediawiki>
 - BIP-361, *Post Quantum Migration and Legacy Signature Sunset* — <https://github.com/bitcoin/bips/blob/master/bip-0361.mediawiki>
+- SHRINCS Working Group, *SHRINCS: an efficient hash-based signature scheme for Bitcoin (first draft)*, bitcoin-dev, 2026-08-27 — <https://groups.google.com/g/bitcoindev/c/HbVboXIFiG8>, <https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md>
+- NIST, FIPS 205 (SLH-DSA) — the standardised SPHINCS+ variant SHRINCS uses for its stateless path — <https://csrc.nist.gov/pubs/fips/205/final>
 - Bitcoin Optech, *Quantum resistance* — <https://bitcoinops.org/en/topics/quantum-resistance/>
 - Cosmos SDK, `UPGRADING.md` — <https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md>
 - Cosmos SDK PR #26436, ML-DSA-65 consensus keys — <https://github.com/cosmos/cosmos-sdk/pull/26436>
