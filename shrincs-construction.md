@@ -9,8 +9,10 @@
 > <https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md>.
 >
 > Status: first draft, marked "Do NOT use in production". Security proofs, test vectors
-> and unit tests are all outstanding. The vocabulary is that of FIPS 205, and the section
-> below fixes the terms before they are used.
+> and unit tests are all outstanding. A Rust implementation of the whole scheme, written
+> to check the claims below, is at
+> [`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs). The vocabulary is
+> that of FIPS 205, and the section below fixes the terms before they are used.
 
 ## Notation and terminology
 
@@ -642,6 +644,23 @@ implementation are all outstanding.
 The `Requires` field of BIP-361 reads "TBD Post Quantum Signature BIP". SHRINCS is the
 first public candidate for that missing document, and it has not been submitted to the
 BIPs repository, so BIP-361 itself remains the only post-quantum entry in the BIPs index.
+
+## A reference implementation
+
+The whole scheme is implemented in Rust at
+[`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs), following the
+draft's own structure. It is checked against two authorities rather than against
+itself: the reference implementation the draft ships, which fixes the vectors and
+which it also cross-verifies with in both directions, and NIST's ACVP vectors,
+which the stateless component reproduces once instantiated at the standard SLH-DSA
+parameter sets. The second matters because the draft's central reuse claim is that
+this component is FIPS 205, and vectors from the draft cannot test that claim.
+
+Writing it surfaced one behaviour this note had left implicit. Exhausting the
+stateful budget is not an error: `shrincs_sign` finds no leaf and takes the same
+branch as when no counter was supplied at all, so the signature comes back from the
+stateless component at 5,777 bytes and verifies. Running out of leaves and losing
+the state file degrade identically.
 
 ## Appendix: the working group
 
