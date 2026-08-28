@@ -995,6 +995,18 @@ keys over a single sign-document. Relayer consensus is therefore a threshold
 vote carried by one 48-byte signature regardless of signer count, and the
 bitmap design exists precisely so that signer count can grow.
 
+BLS supplies two properties at once here, and the post-quantum replacement is
+two questions rather than one. It aggregates: N independently generated keys
+produce one constant-size object. Separately, the surrounding code supplies a
+threshold, since the bitmap selects voters and the participation count is checked
+against `Threshold()`. GOAT therefore uses BLS as an *aggregate signature* with
+the threshold enforced in application logic, not as a threshold signature. The
+distinction decides which replacements are like-for-like. A post-quantum
+aggregation scheme preserves the bitmap, preserves per-signer attribution, and
+needs no key-generation ceremony. A threshold signature moves the threshold into
+the cryptography, requires a distributed key generation, and produces a signature
+that does not identify who signed.
+
 ### The limits of zkVM wrapping for BLS verification
 
 A natural approach is to wrap the existing BLS verification in a post-quantum
@@ -1041,42 +1053,77 @@ separately from the attestation-key work.
 
 ### Threshold signing
 
-Recursion is not the only way to recover what BLS provided. The requirement is
-narrower than *aggregation* in the general sense: it is many
-signers, one message, verified against a threshold. That is the shape a
-threshold signature has natively (N parties jointly emit a single ordinary
-signature), and unlike aggregation it leaves the verifier untouched.
+Recursion is not the only way to recover a constant-size vote. The requirement at
+the verification site is narrower than aggregation in general: many signers, one
+message, checked against a threshold. A threshold signature has that shape
+natively, since N parties jointly emit one ordinary signature, and it leaves the
+verifier untouched.
 
-Two 2026 results make this concrete for ML-DSA specifically, and they differ in
-the dimension that matters here:
+It is not, however, a smaller version of aggregation. A single signing key exists
+as a mathematical object even where it is never materialised, which requires
+either a distributed key generation or a dealer; the signer set is fixed at key
+generation and changing it requires re-sharing; and the resulting signature does
+not identify its contributors. Aggregation has none of the first three properties
+and does have the last. The two are incomparable rather than ordered.
 
-| | Parties | Communication | Verifier |
+| | Parties | Verifier | Communication |
 | --- | --- | --- | --- |
-| [Quorus](https://eprint.iacr.org/2025/1163) (Bienstock et al., USENIX 2026) | **any number**, t-of-n | ~100 KB per party per rejection-sampling round | unmodified ML-DSA; signature and key sizes match |
-| [Efficient Threshold ML-DSA](https://eprint.iacr.org/2026/013) (Celi et al.) | up to **6** | ≤ 1 MB per party | unmodified ML-DSA |
+| [Hermine](https://eprint.iacr.org/2026/419) (Borin et al., ASIACRYPT 2026) | **N ≤ 64**; concrete parameters derived for N ≤ 16, T ≤ 8 | Raccoon, 11.3 KB signature | 73.2 KB per party |
+| [Quorus](https://eprint.iacr.org/2025/1163) (Bienstock et al., USENIX 2026) | **any number**, t-of-n | unmodified ML-DSA; signature and key sizes match | ~100 KB per party per rejection-sampling round |
+| [Efficient Threshold ML-DSA](https://eprint.iacr.org/2026/013) (Celi et al.) | up to **6** | unmodified ML-DSA | ≤ 1 MB per party |
 
-For a relayer set in the tens, only the first scales; the second is explicitly a
-small-party construction. What either buys is that the chain keeps verifying one
-3309-byte signature with a stock FIPS 204 verifier no matter how many relayers
-voted: the constant-size property that made BLS attractive.
+Two of the three keep the chain verifying one standard signature with a stock
+FIPS 204 verifier however many relayers voted, which is the constant-size
+property that made BLS attractive. Hermine instead emits a Raccoon signature, so
+adopting it changes the verification scheme as well as the signing protocol, and
+Raccoon is itself a NIST additional-signature submission rather than a standard.
 
-The price is a change in signing shape, not in key type. Today each relayer
-signs independently and offline, and the bitmap merely records who did. Threshold
-signing replaces that with a live multi-round protocol among the selected quorum,
-which converts a liveness-tolerant design into one with a signing-time
-availability requirement. That is a heavier change than it appears in a table.
+The price is a change in signing shape rather than in key type, and it is smaller
+than it was. Today each relayer signs independently and offline, and the bitmap
+records who did; a threshold protocol replaces that with a coordinated session
+among the selected quorum. Hermine's first round is independent of both the
+message and the signer set, so it can be preprocessed and the online phase is a
+single round, and its non-interactive identifiable abort attributes a failed
+session from the transcript alone, which is what a slashing design requires. The
+residual cost is that the online round needs the quorum simultaneously available,
+where the present design tolerates arbitrary staggering.
 
-And none of it is standardised. NIST's first call for multi-party threshold
-schemes, [IR 8214C](https://csrc.nist.gov/projects/threshold-cryptography),
-reached final only on 2026-01-20, with preview submissions due 2026-08-07. For a
-peg trust root, depending on a construction with no FIPS number and no
-validation programme is a governance decision as much as a technical one, and it
-argues for sequencing the attestation key, which needs no aggregation at all,
-ahead of the vote key.
+Two obstacles are larger than the protocol shape. The first is key generation.
+Hermine assumes a trusted dealer and leaves distributed key generation for
+Vandermonde sharing as an open problem; the compact construction of del Pino and
+Niot omits it and notes that adding it would increase signature size. For a peg
+trust root a dealer is not acceptable, because it means one party holds the whole
+key at setup. Among lattice threshold schemes only Pelican and Olingo ship a
+distributed key generation, and neither offers the feature set above. This, and
+not signature size, is what currently blocks deployment.
 
-The third possibility is post-hoc *signature* aggregation: squash N existing
-ML-DSA signatures into one small object without changing how anyone signs. It is
-also the least developed of the three.
+The second is attribution. The bitmap does double duty: it selects voters and it
+records participation. A threshold signature removes the second function, since
+the output is indistinguishable from a single signer's. Where relayer rewards or
+slashing depend on who voted, that logic has to be rebuilt or carried separately.
+
+Standardisation has moved without arriving. NIST's first call for multi-party
+threshold schemes, [IR 8214C](https://csrc.nist.gov/projects/threshold-cryptography),
+reached final on 2026-01-20 with preview submissions due 2026-08-07, and Hermine
+has been submitted to it. A submission is not a selection, and for a peg trust
+root, depending on a construction with no FIPS number and no validation
+programme remains a governance decision as much as a technical one. It argues for
+sequencing the attestation key, which needs no aggregation at all, ahead of the
+vote key.
+
+Two adjacent results do not fit this surface. The compact scheme of del Pino and
+Niot reaches 2.7 KB, close to a single Dilithium signature, but only at N = 8,
+because its replicated secret sharing grows as a binomial coefficient; Hermine's
+Vandermonde sharing is what raises the ceiling to 64, at roughly four times the
+signature size. [MuSig-L](https://eprint.iacr.org/2022/1036) is the lattice
+analogue of MuSig2 and needs no key-generation ceremony, but it is n-of-n rather
+than t-of-n and reports no concrete parameters.
+
+### Post-hoc signature aggregation
+
+The remaining option belongs with aggregation rather than with the threshold
+schemes above: squash N existing ML-DSA signatures into one small object without
+changing how anyone signs. It is the least developed of the three.
 [Boudgoust and Takahashi](https://eprint.iacr.org/2023/159) (ESORICS 2023) gave
 the first Fiat-Shamir-with-aborts aggregate signature, applicable to Dilithium,
 and report "quite small compression rates" in their own words; it also aggregates
@@ -1423,6 +1470,9 @@ script figure in section 10, which were re-measured rather than re-read.
 - CometBFT issue #3455, *BLS signature aggregation* — <https://github.com/cometbft/cometbft/issues/3455>
 - CometBFT issue #1305, *Halve commit size with partial ed25519 signatures* — <https://github.com/cometbft/cometbft/issues/1305>
 - CometBFT PRs #3632 and #4763, `crypto/bls12381` signature aggregation, both closed unmerged — <https://github.com/cometbft/cometbft/pull/3632>, <https://github.com/cometbft/cometbft/pull/4763>
+- G. Borin, S. Celi, R. del Pino, T. Espitau, S. Katsumata, G. Niot, T. Prest, K. Takemure, *Hermine: An Efficient Lattice-based FROST-like Threshold Signature*, ASIACRYPT 2026 — <https://eprint.iacr.org/2026/419>
+- R. del Pino, G. Niot, *Finally! A Compact Lattice-Based Threshold Signature*, PKC 2025 — <https://eprint.iacr.org/2025/872>
+- C. Boschini, A. Takahashi, M. Tibouchi, *MuSig-L: Lattice-Based Multi-Signature With Single-Round Online Phase*, CRYPTO 2022 — <https://eprint.iacr.org/2022/1036>
 - A. Bienstock, L. de Castro, D. Escudero, A. Polychroniadou, A. Takahashi, *Quorus: Efficient, Scalable Threshold ML-DSA Signatures from MPC*, USENIX Security 2026 — <https://eprint.iacr.org/2025/1163>
 - S. Celi, R. del Pino, T. Espitau, G. Niot, T. Prest, *Efficient Threshold ML-DSA* — <https://eprint.iacr.org/2026/013>
 - K. Boudgoust, A. Takahashi, *Sequential Half-Aggregation of Lattice-Based Signatures*, ESORICS 2023 — <https://eprint.iacr.org/2023/159>
