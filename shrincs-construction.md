@@ -42,7 +42,7 @@ restore from a static backup.
 
 ### Signing flow
 
-![How a SHRINCS signature is composed: the stateful path and the stateless fallback, both reducing to the 48-byte public key](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/architecture.png)
+[![How a SHRINCS signature is composed: the stateful path and the stateless fallback, both reducing to the 48-byte public key](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/architecture.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/architecture.png)
 
 Each path reduces to a root, and the two roots together form the public key. The two are
 not independent of one another; see the cross-binding in section 6.
@@ -220,7 +220,7 @@ H_msg_sl(R, pk_seed, sl_root, M)
 H_msg_sf(R, pk_seed, sf_root, ADRS, M)
 ```
 
-![Byte layout of both message digests, showing each taking its own root as a parameter and the other path's root inside M](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/cross-binding.png)
+[![Byte layout of both message digests, showing each taking its own root as a parameter and the other path's root inside M](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/cross-binding.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/cross-binding.png)
 
 The two components are therefore interlocked. Neither root can be lifted out of the
 public key and used as a key in its own right, and a signature under one path cannot be
@@ -243,7 +243,7 @@ requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
 On a single chain, the signature value σᵢ is the intermediate result of walking dᵢ steps
 along the chain from the secret key. A verifier can only continue forwards:
 
-![One WOTS+C chain drawn at every Winternitz position, and all 32 chain indexes of a real signature summing to 240](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)
+[![One WOTS+C chain drawn at every Winternitz position, and all 32 chain indexes of a real signature summing to 240](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)
 
 With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
 The signer **grinds** a 16-bit counter until the sum lands on it:
@@ -256,7 +256,7 @@ for i in range(2**16):
         return (i, indexes)     # counter i goes into the signature
 ```
 
-![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
+[![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
 
 Grinding fails with probability below 2⁻¹⁴⁵⁰, which is the target the draft's parameters
 were chosen against. The verifier recomputes once from the counter in the signature and
@@ -393,7 +393,7 @@ ctr < 2^depth → (index=ctr, height=255−depth)
 The budget is **2^depth** and every signature is the same length: all leaves sit on one
 level, so the authentication path is always `depth` siblings.
 
-![UXMSS and BXMSS side by side, with the signature size at each leaf and a table of budget and cost](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)
+[![UXMSS and BXMSS side by side, with the signature size at each leaf and a table of budget and cost](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)
 
 Circles are internal nodes, boxes are WOTS+C leaves, and each leaf carries the signature
 size it produces.
@@ -417,7 +417,7 @@ The verifier never sees `shape`. It reads the first signature byte, derives `dep
 climbs that many levels. Worked through on the UXMSS tree above, signing with the state
 counter at 2:
 
-![A worked FXMSS signature at counter 2: signing path, authentication path, what the signature carries, and the verifier's root recomputation](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)
+[![A worked FXMSS signature at counter 2: signing path, authentication path, what the signature carries, and the verifier's root recomputation](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)
 
 `fxmss_pubkey_from_sig` receives only `(leaf_index, leaf_height, signature)`:
 
