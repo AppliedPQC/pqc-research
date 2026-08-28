@@ -42,30 +42,7 @@ restore from a static backup.
 
 ### Signing flow
 
-```mermaid
-flowchart TB
-  M["message M"]
-  subgraph SF["stateful path (primary) · FXMSS"]
-    direction TB
-    HSF["H_msg_sf"]
-    WC["WOTS+C one-time signature<br/>32 chains · 512 B"]
-    AP["FXMSS authentication path<br/>16 B × depth"]
-    HSF --> WC --> AP
-  end
-  subgraph SL["stateless path (fallback) · SLH-DSA"]
-    direction TB
-    HSL["H_msg_sl"]
-    FO["FORS<br/>k=10 trees · height a=13 · 2240 B"]
-    HT["hypertree<br/>d=5 XMSS layers · 3520 B"]
-    HSL --> FO --> HT
-  end
-  M --> HSF
-  M --> HSL
-  AP --> SFR["sf_root"]
-  HT --> SLR["sl_root"]
-  SFR --> PK["public key 48 B<br/>pk_seed ‖ sl_root ‖ sf_root"]
-  SLR --> PK
-```
+![How a SHRINCS signature is composed: the stateful path and the stateless fallback, both reducing to the 48-byte public key](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/architecture.png)
 
 Each path reduces to a root, and the two roots together form the public key. The two are
 not independent of one another; see the cross-binding in section 6.
@@ -243,17 +220,7 @@ H_msg_sl(R, pk_seed, sl_root, M)
 H_msg_sf(R, pk_seed, sf_root, ADRS, M)
 ```
 
-```mermaid
-flowchart LR
-  SFR["sf_root"]
-  SLR["sl_root"]
-  HSF["H_msg_sf<br/>stateful digest"]
-  HSL["H_msg_sl<br/>stateless digest"]
-  SFR -- "dedicated parameter" --> HSF
-  SLR -- "carried in M" --> HSF
-  SLR -- "dedicated parameter" --> HSL
-  SFR -- "carried in M" --> HSL
-```
+![Byte layout of both message digests, showing each taking its own root as a parameter and the other path's root inside M](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/cross-binding.png)
 
 The two components are therefore interlocked. Neither root can be lifted out of the
 public key and used as a key in its own right, and a signature under one path cannot be
@@ -276,11 +243,7 @@ requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
 On a single chain, the signature value σᵢ is the intermediate result of walking dᵢ steps
 along the chain from the secret key. A verifier can only continue forwards:
 
-```mermaid
-flowchart LR
-  SK["chain secret skᵢ"] -- "F iterated dᵢ times (signer)" --> SG["σᵢ · the 16 B in the signature"]
-  SG -- "F iterated 15 − dᵢ times (verifier)" --> PKI["chain end pkᵢ"]
-```
+![One WOTS+C chain drawn at every Winternitz position, and all 32 chain indexes of a real signature summing to 240](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)
 
 With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
 The signer **grinds** a 16-bit counter until the sum lands on it:
@@ -293,15 +256,7 @@ for i in range(2**16):
         return (i, indexes)     # counter i goes into the signature
 ```
 
-```mermaid
-flowchart LR
-  I["counter i = 0, 1, 2, …"] --> G["H_grind<br/>pk_seed, ADRS, digest, i"]
-  D["message_digest"] --> G
-  G --> B["base_2b → 32 four-bit indexes d₀…d₃₁"]
-  B --> Q{"Σ dᵢ = 240 ?"}
-  Q -- "no, i ← i+1" --> I
-  Q -- yes --> S["signature = i (2 B) ‖ 32 × 16 B chain values"]
-```
+![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
 
 Grinding fails with probability below 2⁻¹⁴⁵⁰, which is the target the draft's parameters
 were chosen against. The verifier recomputes once from the counter in the signature and
@@ -427,29 +382,7 @@ ctr == depth → (index=0, height=255−depth)   ⇒ leaf_depth = depth
 The budget is **depth+1**, with depths 1, 2, …, d, d, the last two equal. Early signatures
 are very small and later ones grow linearly. The spine descends on the left (`index = 0`)
 and hangs one leaf to the right (`index = 1`) at each level; at the bottom level both
-children are leaves. With `depth = 4`, where circles are internal nodes and boxes are
-WOTS+C leaves:
-
-```mermaid
-flowchart TB
-  R(("root · height 255"))
-  N1((" "))
-  N2((" "))
-  N3((" "))
-  L0["ctr=0 · depth 1<br/>548 B"]
-  L1["ctr=1 · depth 2<br/>564 B"]
-  L2["ctr=2 · depth 3<br/>580 B"]
-  L4["ctr=4 · depth 4<br/>596 B"]
-  L3["ctr=3 · depth 4<br/>596 B"]
-  R --> N1
-  R --> L0
-  N1 --> N2
-  N1 --> L1
-  N2 --> N3
-  N2 --> L2
-  N3 --> L4
-  N3 --> L3
-```
+children are leaves.
 
 **BXMSS, balanced, `shape = 1`:**
 
@@ -457,41 +390,14 @@ flowchart TB
 ctr < 2^depth → (index=ctr, height=255−depth)
 ```
 
-The budget is **2^depth** and every signature is the same length. With `depth = 3`, all
-eight leaves sit on one level and the authentication path is always three siblings:
+The budget is **2^depth** and every signature is the same length: all leaves sit on one
+level, so the authentication path is always `depth` siblings.
 
-```mermaid
-flowchart TB
-  R(("root · height 255"))
-  A((" "))
-  B((" "))
-  A0((" "))
-  A1((" "))
-  B0((" "))
-  B1((" "))
-  L0["ctr=0<br/>580 B"]
-  L1["ctr=1<br/>580 B"]
-  L2["ctr=2<br/>580 B"]
-  L3["ctr=3<br/>580 B"]
-  L4["ctr=4<br/>580 B"]
-  L5["ctr=5<br/>580 B"]
-  L6["ctr=6<br/>580 B"]
-  L7["ctr=7<br/>580 B"]
-  R --> A
-  R --> B
-  A --> A0
-  A --> A1
-  B --> B0
-  B --> B1
-  A0 --> L0
-  A0 --> L1
-  A1 --> L2
-  A1 --> L3
-  B0 --> L4
-  B0 --> L5
-  B1 --> L6
-  B1 --> L7
-```
+![UXMSS and BXMSS side by side, with the signature size at each leaf and a table of budget and cost](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)
+
+Circles are internal nodes, boxes are WOTS+C leaves, and each leaf carries the signature
+size it produces.
+
 
 | Configuration | Signature size | Budget | Key generation (SHA-256 compressions) | Average signing |
 |---|---|---|---|---|
@@ -508,20 +414,10 @@ the small signatures, and BXMSS flattens size across all of them.
 ### Shape-agnostic verification
 
 The verifier never sees `shape`. It reads the first signature byte, derives `depth`, and
-climbs that many levels:
+climbs that many levels. Worked through on the UXMSS tree above, signing with the state
+counter at 2:
 
-```mermaid
-flowchart TB
-  A["read first byte leaf_height"] --> B["depth ←<br/>255 − leaf_height"]
-  B --> C["check auth length<br/>= depth × 16"]
-  C --> D["node ← the leaf<br/>recovered from the WOTS+C signature"]
-  D --> E{"k < depth ?"}
-  E -- yes --> F["bit k of leaf_index puts<br/>the sibling left or right<br/>node ← H of the two<br/>k ← k+1"]
-  F --> E
-  E -- no --> G{"node = sf_root ?"}
-  G -- yes --> OK["accept"]
-  G -- no --> NO["reject"]
-```
+![A worked FXMSS signature at counter 2: signing path, authentication path, what the signature carries, and the verifier's root recomputation](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)
 
 `fxmss_pubkey_from_sig` receives only `(leaf_index, leaf_height, signature)`:
 
