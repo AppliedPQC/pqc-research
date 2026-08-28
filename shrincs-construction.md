@@ -9,8 +9,35 @@
 > <https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md>.
 >
 > Status: first draft, marked "Do NOT use in production". Security proofs, test vectors
-> and unit tests are all outstanding. Reading this assumes familiarity with FIPS 205:
-> hypertrees, XMSS, WOTS+, FORS, and ADRS tweakable hashing.
+> and unit tests are all outstanding. The vocabulary is that of FIPS 205, and the section
+> below fixes the terms before they are used.
+
+## Notation and terminology
+
+The note uses the vocabulary of FIPS 205 throughout, together with two constructions the
+standard does not contain. The terms are given here in roughly the order they are needed.
+
+| Term | Meaning |
+|---|---|
+| **One-time signature**, OTS | A scheme whose secret key is secure for a single message. A second signature under the same key reveals enough of the key that a third can be forged. WOTS+, WOTS-TW and WOTS+C are of this kind. |
+| **Few-time signature**, FTS | A scheme that tolerates a small number of signatures under one key, with security degrading as that number grows. FORS is of this kind. |
+| **Winternitz chain** | A sequence of iterated applications of a hash to a chain secret. Publishing the `d`-th iterate encodes the index `d`, and a verifier can advance the chain but not reverse it. |
+| **Winternitz parameter** `w` | The chain length, 16 throughout SHRINCS, so each chain carries `lg w = 4` bits of the digest. |
+| **Checksum chains** | Extra chains encoding the complement of the sum of the message indexes, so that raising any message index forces the checksum index down, which would require inverting a chain. WOTS-TW appends three. |
+| **Constant-sum encoding** | The alternative WOTS+C uses. No checksum is appended; instead only index vectors summing to a fixed constant are admitted, and the signer searches a counter until the digest yields one. Raising one index then requires lowering another, and the number of chain steps becomes fixed. Also called target-sum Winternitz. |
+| **Merkle tree** | A binary tree whose leaves commit to the values being authenticated and whose internal nodes are hashes of their two children, so that the root commits to every leaf. |
+| **Authentication path** | The sibling of each node along the path from a leaf to the root. With the leaf it determines the root, and it is what a signature carries to prove membership. |
+| **XMSS** | A Merkle tree whose leaves are OTS public keys, evaluated under a tweakable hash at every node. Each signature consumes one leaf, which makes the scheme stateful. |
+| **Hypertree** | A tree of XMSS trees, each layer signing the root of the layer below with one of its OTS keys. This reaches a large signature budget without any single tree of impractical height. |
+| **FORS** | A few-time signature of `k` Merkle trees of height `a`. The digest selects one leaf per tree, and the signature reveals those leaves with their authentication paths. |
+| **Tweakable hash** | A hash keyed by a public seed and by a position, so that the function applied at one position is independent of the function applied at any other. |
+| **ADRS** | The address that encodes such a position. Giving every call a distinct ADRS is what makes those hashes independent. |
+| **Domain separation** | Arranging that inputs playing different roles cannot collide, by making the function itself differ with the role. |
+| **Multi-target attack** | A search for a preimage of any one of many published hashes at once. The advantage grows with the number of targets, which is why positions are separated and tree edges directed. |
+| **Stateful scheme** | One whose signer must record which leaves have been used, since reuse breaks security. |
+| **Stateless scheme** | One whose signer keeps no persistent record, at the cost of a larger signature. |
+| **Semi-stateful scheme** | The arrangement SHRINCS introduces: one key pair carrying both, with the stateless component available whenever the state is not. |
+| **Signature budget** | The number of signatures a key pair can produce before its leaves are exhausted. |
 
 ## 1. Relationship to SLH-DSA
 
