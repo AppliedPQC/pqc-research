@@ -645,39 +645,22 @@ The `Requires` field of BIP-361 reads "TBD Post Quantum Signature BIP". SHRINCS 
 first public candidate for that missing document, and it has not been submitted to the
 BIPs repository, so BIP-361 itself remains the only post-quantum entry in the BIPs index.
 
-## An implementation to check the figures against
+## A reference implementation
 
-Every number in this note is computed from the draft's constants rather than quoted, and
-the two cells above run the parts of the scheme they describe. The whole scheme is
-implemented separately, in Rust, at
-[`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs).
+The whole scheme is implemented in Rust at
+[`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs), following the
+draft's own structure. It is checked against two authorities rather than against
+itself: the reference implementation the draft ships, which fixes the vectors and
+which it also cross-verifies with in both directions, and NIST's ACVP vectors,
+which the stateless component reproduces once instantiated at the standard SLH-DSA
+parameter sets. The second matters because the draft's central reuse claim is that
+this component is FIPS 205, and vectors from the draft cannot test that claim.
 
-That crate follows the draft's own structure: the address, the SHA-256 tweakable hash
-family, WOTS-TW and WOTS+C, FXMSS, and XMSS, the hypertree, FORS and SLH-DSA over them.
-It is checked against two authorities rather than against itself.
-
-Against the draft, its known-answer tests are produced by running the reference
-implementation the draft ships, covering key generation, all 46 stateful signatures
-across four tree shapes, and the stateless fallback, byte for byte. The two
-implementations also verify each other's signatures over randomly generated inputs, and
-reject the same corruptions, which is the part byte-equality cannot establish: a verifier
-that accepted everything would pass a byte-equality test unnoticed.
-
-Against NIST, the stateless component is instantiated at the *standard* SLH-DSA parameter
-sets and run against the ACVP vectors, which it reproduces. That is worth doing because
-the draft's central reuse claim is that this component is FIPS 205, and the draft's own
-vectors cannot test that claim: they would pass equally well if the draft and the
-implementation were wrong in the same way. The negative half of those vectors matters
-most, since a verifier that rejected everything would satisfy the positive half alone.
-
-A separate check re-derives all sixteen sizes the draft states from their defining
-equations, which is what would catch a mistyped constant.
-
-Writing it surfaced one behaviour the prose above does not make obvious. Exhausting the
-stateful budget is not an error. `shrincs_sign` selects a leaf, and when no leaf remains
-it takes the same branch as when no counter was supplied at all, so the signature comes
-back at 5,777 bytes and verifies. Running out of leaves and losing the state file
-degrade identically.
+Writing it surfaced one behaviour this note had left implicit. Exhausting the
+stateful budget is not an error: `shrincs_sign` finds no leaf and takes the same
+branch as when no counter was supplied at all, so the signature comes back from the
+stateless component at 5,777 bytes and verifies. Running out of leaves and losing
+the state file degrade identically.
 
 ## Appendix: the working group
 
