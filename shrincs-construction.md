@@ -257,13 +257,33 @@ carried over to a different public key.
 
 ## 7. WOTS+C: constant-sum encoding in place of a checksum
 
-WOTS+ needs checksum chains because, with message chains alone, an adversary holding
-σ = Hᴰ(s) can hash further to Hᴰ′(s) for D′ > D and forge a larger value. The checksum
-chain σ₁ = H^(w−1−D)(s₁) makes any increase in D require hashing the checksum chain
-backwards, which is infeasible.
+### Winternitz signatures, briefly
 
-WOTS+C takes a different route. It adds no checksum, and instead requires the chain
-indexes to sum to a constant.
+Both of the one-time signatures here are Winternitz, so it is worth having the base
+construction in view before the variation.
+
+A **chain** is a hash applied repeatedly to a secret: `s`, `H(s)`, `H²(s)`, and so on.
+Publishing the `d`-th link signs the digit `d`, because a verifier can walk the chain
+forward to the end but cannot walk it back without inverting `H`. The end of the chain,
+`H^(w−1)(s)`, is the public value. With `w` the Winternitz parameter, one chain carries
+`lg w` bits, and a digest is signed by cutting it into digits and giving each its own
+chain.
+
+That much is forgeable on its own. An adversary holding `Hᴰ(s)` can hash further to get
+`Hᴰ′(s)` for any `D′ > D`, which is a valid signature on every larger digit. The fix is a
+second kind of chain carrying the complement of the digit sum, so that raising a message
+digit lowers a checksum digit, and forging upwards means walking a checksum chain
+*backwards*.
+
+[![WOTS+ at w = 8: key generation, signing the digit 2, verification, and why the checksum chain is needed](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-plus.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-plus.png)
+
+That is WOTS+, and WOTS-TW is the same construction with the chaining function replaced
+by a tweakable hash, which is what makes each position in each chain a distinct function
+and what gives SPHINCS+ its tight security proof. Everything above holds for it, with
+three checksum chains over 32 message chains at `w = 16`.
+
+WOTS+C takes a different route to the same end. It adds no checksum, and instead admits
+only digests whose chain indexes already sum to a constant.
 
 ```
 requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
@@ -272,20 +292,54 @@ requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
 On a single chain, the signature value σᵢ is the intermediate result of walking dᵢ steps
 along the chain from the secret key. A verifier can only continue forwards:
 
-[![One WOTS+C chain drawn at every Winternitz position, and all 32 chain indexes of a real signature summing to 240](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)
 
 With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
 The signer **grinds** a 16-bit counter until the sum lands on it:
 
-```py
-for i in range(2**16):
-    hashed  = H_grind(pk_seed, ADRS, message_digest, i)
-    indexes = base_2b(hashed, 4, 32)
-    if sum(indexes) == 240:
-        return (i, indexes)     # counter i goes into the signature
+```rust
+pub fn wots_c_grind<S: HashSuite>(
+    pk_seed: &[u8],
+    digest: &[u8],
+    adrs: &mut Adrs,
+) -> Option<(u16, Vec<u32>)> {
+    adrs.set_type(SF_WOTS_C_GRIND);
+    for i in 0..=u16::MAX {
+        let hashed = S::h_grind(pk_seed, adrs, digest, i);
+        let idx = base_2b(&hashed, WOTS_C_CHAIN_BITS, WOTS_C_CHAIN_COUNT);
+        if idx.iter().map(|&x| x as usize).sum::<usize>() == WOTS_C_CONSTANT_SUM {
+            return Some((i, idx));
+        }
+    }
+    None
+}
 ```
 
-[![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
+The counter is returned alongside the indexes because the signature carries it: a
+verifier cannot search for it, and recomputes once from the value it is given.
+
+```rust
+pub fn wots_c_map_digest<S: HashSuite>(
+    pk_seed: &[u8],
+    digest: &[u8],
+    adrs: &mut Adrs,
+    counter: u16,
+) -> Option<Vec<u32>> {
+    adrs.set_type(SF_WOTS_C_GRIND);
+    let idx = base_2b(
+        &S::h_grind(pk_seed, adrs, digest, counter),
+        WOTS_C_CHAIN_BITS,
+        WOTS_C_CHAIN_COUNT,
+    );
+    (idx.iter().map(|&x| x as usize).sum::<usize>() == WOTS_C_CONSTANT_SUM).then_some(idx)
+}
+```
+
+Both are from [`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs)
+unchanged. The `None` on the last line of `wots_c_grind` is the case the draft puts
+below 2⁻¹⁴⁵⁰; the `None` from `wots_c_map_digest` is a verifier rejecting a counter
+whose indexes miss the sum, which is the check that makes the encoding binding.
+
+[![WOTS+C in three parts: key generation without checksum chains, grinding a counter until the 32 digits sum to 240, and a verifier whose chain work is the same 240 steps for every message](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c.png)
 
 Grinding fails with probability below 2⁻¹⁴⁵⁰, which is the target the draft's parameters
 were chosen against. The verifier recomputes once from the counter in the signature and
@@ -301,9 +355,9 @@ Two consequences follow:
    case exactly.
 
 The second claim is the one worth checking rather than taking on faith. The cell below
-is the specification's `H_grind`, `base_2b` and `wots_c_map_digest` verbatim, run over 300
-messages. It reports how many counters grinding consumed, and the number of chain steps
-each side walks.
+is the same computation in Python, so that it runs here in the page: the
+specification's `H_grind` and `base_2b`, over 300 messages. It reports how many counters
+grinding consumed, and the number of chain steps each side walks.
 
 <div class="sage"><script type="text/x-sage">import hashlib
 def sha256(b): return hashlib.sha256(b).digest()
@@ -352,6 +406,24 @@ that 32 uniform four-bit values sum to their mean. Both step counts are the sing
 > author in Mikhail Kudinov.
 
 ## 8. FXMSS: an XMSS of signer-chosen shape
+
+### XMSS, briefly
+
+A one-time key signs once, so a scheme that signs more than once needs many of them and
+a way to publish them all as one value. XMSS is the standard answer: put the hashes of
+the one-time public keys at the leaves of a Merkle tree and publish the root.
+
+A signature then carries three things. The one-time signature itself; the **index** of
+the leaf that made it; and the **authentication path**, one sibling per level from that
+leaf to the root. A verifier recovers the leaf from the one-time signature and climbs,
+combining with each sibling in turn, and the index tells it which side to combine on.
+Reaching the published root is what verification means.
+
+[![XMSS at height 3, signing with leaf 2: the tree, the authentication path, what the signature carries, and the verifier's climb](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/xmss.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/xmss.png)
+
+Each leaf may be used once, which is what makes XMSS stateful: the signer has to record
+which leaves are spent. That is the constraint FXMSS inherits and the state counter of
+section 9 manages, and it is why the scheme carries a stateless fallback at all.
 
 ### Differences from XMSS
 
@@ -443,10 +515,11 @@ the small signatures, and BXMSS flattens size across all of them.
 ### Shape-agnostic verification
 
 The verifier never sees `shape`. It reads the first signature byte, derives `depth`, and
-climbs that many levels. Worked through on the UXMSS tree above, signing with the state
-counter at 2:
+climbs that many levels. The figure below sets out the whole scheme in the same three
+parts as the ones above, and works the climb through on a UXMSS tree of depth 4 with the
+state counter at 2:
 
-[![A worked FXMSS signature at counter 2: signing path, authentication path, what the signature carries, and the verifier's root recomputation](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)
+[![FXMSS in three parts: the signer choosing a shape, the state counter selecting a leaf, and a verifier that climbs on depth alone](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)
 
 `fxmss_pubkey_from_sig` receives only `(leaf_index, leaf_height, signature)`:
 
