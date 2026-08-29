@@ -292,7 +292,6 @@ requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
 On a single chain, the signature value σᵢ is the intermediate result of walking dᵢ steps
 along the chain from the secret key. A verifier can only continue forwards:
 
-[![One WOTS+C chain drawn at every Winternitz position, and all 32 chain indexes of a real signature summing to 240](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-chain.png)
 
 With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
 The signer **grinds** a 16-bit counter until the sum lands on it:
@@ -340,7 +339,7 @@ unchanged. The `None` on the last line of `wots_c_grind` is the case the draft p
 below 2⁻¹⁴⁵⁰; the `None` from `wots_c_map_digest` is a verifier rejecting a counter
 whose indexes miss the sum, which is the check that makes the encoding binding.
 
-[![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
+[![WOTS+C in three parts: key generation without checksum chains, grinding a counter until the 32 digits sum to 240, and a verifier whose chain work is the same 240 steps for every message](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c.png)
 
 Grinding fails with probability below 2⁻¹⁴⁵⁰, which is the target the draft's parameters
 were chosen against. The verifier recomputes once from the counter in the signature and
@@ -516,10 +515,11 @@ the small signatures, and BXMSS flattens size across all of them.
 ### Shape-agnostic verification
 
 The verifier never sees `shape`. It reads the first signature byte, derives `depth`, and
-climbs that many levels. Worked through on the UXMSS tree above, signing with the state
-counter at 2:
+climbs that many levels. The figure below sets out the whole scheme in the same three
+parts as the ones above, and works the climb through on a UXMSS tree of depth 4 with the
+state counter at 2:
 
-[![A worked FXMSS signature at counter 2: signing path, authentication path, what the signature carries, and the verifier's root recomputation](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-signature.png)
+[![FXMSS in three parts: the signer choosing a shape, the state counter selecting a leaf, and a verifier that climbs on depth alone](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)
 
 `fxmss_pubkey_from_sig` receives only `(leaf_index, leaf_height, signature)`:
 
