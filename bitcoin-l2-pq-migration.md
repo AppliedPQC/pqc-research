@@ -1,6 +1,6 @@
 # Post-quantum migration for Bitcoin layer 2s
 
-## Abstract
+### Abstract
 
 A Bitcoin layer 2 has a post-quantum problem that neither Bitcoin nor Ethereum
 has alone. It settles to a base layer it cannot change, borrows consensus from a
@@ -28,7 +28,7 @@ elliptic-curve assertion. Section 9 follows that pattern through four
 generations of the same component and finds it stated outright in the security
 proof of the newest one.
 
-## Sources and verification
+### Sources and verification
 
 The analysis is drawn from primary sources: BIP text from
 [`bitcoin/bips`](https://github.com/bitcoin/bips),
@@ -44,9 +44,9 @@ Claims are stated as verified; checks still outstanding are listed under
 
 ---
 
-# Part I: The general problem
+## Part I: The general problem
 
-## 1. Why a Bitcoin L2 is a distinct problem
+### 1. Why a Bitcoin L2 is a distinct problem
 
 Most post-quantum blockchain analysis treats a chain as a single cryptographic
 system: one signature scheme securing funds, one consensus mechanism, one
@@ -75,7 +75,7 @@ recognising that the L2 can schedule only half of it. The rest of this report
 separates the surfaces it owns from the ones where the available course is to
 bound exposure and track upstream roadmaps.
 
-## 2. The surface taxonomy
+### 2. The surface taxonomy
 
 Any Bitcoin L2 that settles to L1 and runs its own consensus has, at minimum,
 these cryptographic surfaces. The taxonomy makes the ownership question
@@ -96,14 +96,14 @@ and only the middle group is the L2's to schedule.
 
 ---
 
-# Part II: The base layers an L2 inherits from
+## Part II: The base layers an L2 inherits from
 
 *Bitcoin, Ethereum and Cosmos are usually discussed as though they face one
 shared problem and differ only in speed. They do not: they are solving
 structurally different problems, and their relative progress inverts the usual
 assumption.*
 
-## 3. The three base-layer problems compared
+### 3. The three base-layer problems compared
 
 | | **Bitcoin** | **Ethereum** | **Cosmos** |
 | --- | --- | --- | --- |
@@ -113,7 +113,7 @@ assumption.*
 | Furthest artifact | Draft BIPs | working prototypes | **shipped, opt-in** |
 | Governance style | soft fork, rough consensus | coordinated upgrades | per-chain opt-in + genesis params |
 
-## 4. Bitcoin: an exposure problem, with the signature question deferred
+### 4. Bitcoin: an exposure problem, with the signature question deferred
 
 Two Draft BIPs sit in the canonical
 [`bitcoin/bips`](https://github.com/bitcoin/bips) repository. Neither is
@@ -164,7 +164,7 @@ outputs. So the coins that genuinely become unspendable are the abandoned ones
 and the ones where no secret asymmetry exists, not the legacy supply as a
 whole.
 
-### The SHRINCS draft specification
+#### The SHRINCS draft specification
 
 A candidate for that missing document was posted to the bitcoin-dev list on
 2026-08-27: [SHRINCS](https://groups.google.com/g/bitcoindev/c/HbVboXIFiG8)
@@ -239,7 +239,7 @@ aggregation. The peg custody of section 11 rests on exactly that second property
 which places its post-quantum replacement outside what a hash-based output type
 provides on its own.
 
-## 5. Ethereum: an aggregation problem at consensus, an account problem above it
+### 5. Ethereum: an aggregation problem at consensus, an account problem above it
 
 Ethereum's exposure is ordinary (accounts reveal a public key on first spend,
 consensus uses BLS12-381), but its *constraint* is not. Hash-based signatures
@@ -293,7 +293,7 @@ Nothing post-quantum has shipped to Ethereum mainnet on any of these fronts;
 EIP-7885, EIP-8141 and
 [EIP-8151](https://eips.ethereum.org/EIPS/eip-8151) are all Draft.
 
-## 6. Cosmos: key-type negotiation, with a shipped implementation
+### 6. Cosmos: key-type negotiation, with a shipped implementation
 
 Cosmos SDK v0.55 registers
 [ML-DSA-65 (FIPS 204)](https://docs.cosmos.network/sdk/latest/keys/post-quantum-keys)
@@ -369,9 +369,9 @@ is silent until connectivity breaks.
 
 ---
 
-# Part III: The GOAT stack as evidence
+## Part III: The GOAT stack as evidence
 
-## 7. Summary of findings
+### 7. Summary of findings
 
 Six of the seven surfaces below carry quantum-exposed cryptography, and they are
 not equally GOAT's to fix. Row numbers refer to the taxonomy of section 2, so
@@ -395,7 +395,7 @@ The principal result is in rows 3 and 4. BitVM2's Bitcoin-side plumbing is alrea
 post-quantum; its cryptographic content is not. That reframes the work from a
 rewrite into two contained swaps.
 
-## 8. bitvm2-node: hash-based transport of elliptic-curve content
+### 8. bitvm2-node: hash-based transport of elliptic-curve content
 
 [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) is the bridge
 node: a Bitcoin light client and proof pipeline with circuits for the header
@@ -511,7 +511,7 @@ than Groth16's constant-size proof, and BitVM2's economics depend on what fits
 in Bitcoin script and what a challenge transaction costs. That trade is the real
 engineering question, and it should be measured before it is decided.
 
-## 9. The on-chain Groth16 verifier: script, garbling, witness encryption
+### 9. The on-chain Groth16 verifier: script, garbling, witness encryption
 
 The designs treated here form a single line of work. Each answers the
 same question, *how is a Bitcoin script convinced that a Groth16 proof
@@ -529,7 +529,7 @@ of verification, while the *assertion* being verified is invariant.
 The right-hand column is constant across all four generations; the remainder
 of this section documents that invariance.
 
-### The design lineage and GOAT's position in it
+#### The design lineage and GOAT's position in it
 
 [BABE](https://eprint.iacr.org/2026/065) (Garg, Kolonelos, Sergeevitch, Sridhar
 and Tse) states the motivation plainly: BitVM2 "suffers from very high on-chain
@@ -563,7 +563,7 @@ blinding point hidden inside the circuit. It is implemented, not proposed: the
 branch of `bitvm2-gc` carries the BABE implementation alongside the older
 garbled verifier.
 
-### The relation the scheme encrypts against
+#### The relation the scheme encrypts against
 
 The design doc fixes the relation in its first paragraph: a Type-III pairing on
 BN254, with the verifier accepting iff
@@ -590,7 +590,7 @@ on chain." Every on-chain primitive here (hashlocks, Lamport commitments, the
 garbling) survives Shor. That is what makes the composition easy to
 misclassify.
 
-### The security reduction and its discrete-logarithm terms
+#### The security reduction and its discrete-logarithm terms
 
 No inference is required here: GOAT's own security analysis states the
 reduction directly:
@@ -625,7 +625,7 @@ terms, three of the four on-chain primitives are indeed post-quantum, and the
 security proof is a clean reduction. The pairing survives in the *relation being
 encrypted against*, which is the one place the terminology does not indicate.
 
-### Ziren on the dispute path
+#### Ziren on the dispute path
 
 Deferred Binding needs *soldering* (translating garbled labels across
 cut-and-choose instances) and proves it in a zkVM: the soldering program in the
@@ -650,7 +650,7 @@ case for phase 3 of the ordering in section 15.
 One version detail affects which Ziren fixes are inherited: GOAT's note cites
 Ziren 1.2.5, but the implementation pins 1.2.4.
 
-### The garbling security parameter
+#### The garbling security parameter
 
 The garbling layer uses 128-bit wire labels under an AES-128 PRF, in both the
 older garbled verifier and the BABE implementation. 128-bit labels under AES-128 put the
@@ -668,7 +668,7 @@ in the garbling machinery, and the bridge node still authorises peg-outs with
 MuSig2 over Taproot, so the key-path exposure of section 11 is untouched by
 any of this.
 
-### Non-transferability to a Ziren STARK verifier
+#### Non-transferability to a Ziren STARK verifier
 
 The natural next question is whether the same machinery can carry a hash-based
 verifier: witness-encrypt against Ziren's STARK instead of Groth16, and the
@@ -693,7 +693,7 @@ statement, and section 8's conclusion still stands: `bitvm2-gc` is
 Groth16-oriented by construction, so moving off pairings is a rebuild of that
 component rather than a swap of a wrapper.
 
-### Assessment
+#### Assessment
 
 The net effect of this line of work on the post-quantum position is nil, and it
 is not cost-free. Three observations support that assessment: the pairing
@@ -709,7 +709,7 @@ hash-based. It is an argument against *counting* it as post-quantum progress,
 and against the assumption that a future hash-based proof system can be dropped
 into the same protocol.
 
-## 10. Post-quantum replacements for the on-chain verifier
+### 10. Post-quantum replacements for the on-chain verifier
 
 If the Groth16 verifier is removed, something must take its place. What decides
 the choice is not proof size but which opcodes Bitcoin script provides, and the
@@ -742,7 +742,7 @@ concatenated bytes.
 That reopens the field: both remaining candidate families are expressible
 under current consensus rules.
 
-### FRI over an algebraic hash
+#### FRI over an algebraic hash
 
 This is the proof GOAT already has: Ziren is a FRI zkVM committing through
 Poseidon2 over KoalaBear. Verifying it on Bitcoin means writing a verifier for
@@ -794,7 +794,7 @@ and would verify through the same Merkle-and-transcript machinery over the same
 algebraic hash, so it lands in the FRI column on cost and inherits the same
 per-level hash. It changes the prover's options, not the script's.
 
-### Module-lattice arguments
+#### Module-lattice arguments
 
 Schemes in the LaBRADOR line commit algebraically (Ajtai/module-SIS
 commitments verified by ring arithmetic), so they have no hash in the opening at
@@ -851,7 +851,7 @@ it. Neither fits a single transaction,
 and neither needs to (BitVM already chunks a verifier across a disprove
 pattern), so the question is how many chunks each option costs.
 
-### The full verifier, measured
+#### The full verifier, measured
 
 The permutation cost above is one hash. What a bridge executes in a dispute is
 a full verifier:
@@ -935,7 +935,7 @@ inside the script, or none at all if the challenge comes from BitVM's on-chain
 challenge-response rather than from a transcript, which would remove the largest
 cost in the FRI column and should be settled first.
 
-## 11. Peg custody and the Taproot key path
+### 11. Peg custody and the Taproot key path
 
 The peg custody model is direct: the committee aggregates MuSig2 partial
 signatures into a Taproot signature over an n-of-n aggregated Taproot public
@@ -984,7 +984,7 @@ without waiting on anyone. Such policy is advisable and should be recorded
 explicitly, but it should be ranked as risk-bounding rather than as a fix, and
 it does not displace the proof-system work.
 
-## 12. goat: relayer and consensus
+### 12. goat: relayer and consensus
 
 The surfaces in this section admit the least costly migrations in the stack.
 
@@ -1042,7 +1042,7 @@ cannot verify stops packet flow and expires the client) appears not to apply.
 This should be confirmed against deployment reality rather than the dependency
 manifest alone.
 
-## 13. The relayer's BLS vote key
+### 13. The relayer's BLS vote key
 
 Section 12's recommendation addresses the attestation key. That is not the whole
 picture, because the relayer carries three distinct key types, not one:
@@ -1082,7 +1082,7 @@ needs no key-generation ceremony. A threshold signature moves the threshold into
 the cryptography, requires a distributed key generation, and produces a signature
 that does not identify who signed.
 
-### The limits of zkVM wrapping for BLS verification
+#### The limits of zkVM wrapping for BLS verification
 
 A natural approach is to wrap the existing BLS verification in a post-quantum
 zkVM: prove inside `leanVM` that the aggregate verified, and inherit the zkVM's
@@ -1126,7 +1126,7 @@ stack, so the ingredients are unusually close to hand, but this is an
 architectural workstream, not a key-type change, and it should be planned
 separately from the attestation-key work.
 
-### Threshold signing
+#### Threshold signing
 
 Recursion is not the only way to recover a constant-size vote. The requirement at
 the verification site is narrower than aggregation in general: many signers, one
@@ -1194,7 +1194,7 @@ signature size. [MuSig-L](https://eprint.iacr.org/2022/1036) is the lattice
 analogue of MuSig2 and needs no key-generation ceremony, but it is n-of-n rather
 than t-of-n and reports no concrete parameters.
 
-### Post-hoc signature aggregation
+#### Post-hoc signature aggregation
 
 The remaining option belongs with aggregation rather than with the threshold
 schemes above: squash N existing ML-DSA signatures into one small object without
@@ -1209,7 +1209,7 @@ design signal: if aggregability is a first-order requirement, it is an argument
 about *which* post-quantum scheme to adopt, not a problem to be solved after
 adopting ML-DSA.
 
-## 14. goat-geth: the divergence, measured
+### 14. goat-geth: the divergence, measured
 
 Measured against upstream
 [`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum),
@@ -1221,7 +1221,7 @@ behind is the number that matters for planning: any post-quantum work on the
 execution layer inherits an upstream catch-up first, and that catch-up will only
 grow.
 
-### The EVM's cryptographic substrate
+#### The EVM's cryptographic substrate
 
 Treating this surface as "accounts use ECDSA, follow Ethereum" understates it. The EVM exposes elliptic-curve and pairing operations as *consensus-level
 precompiles*, and `goat-geth` carries the full upstream set:
@@ -1272,7 +1272,7 @@ The generalisable rule is therefore sharper than "precompiles are unmigratable":
 are in the second, and a search of the EIPs repository returns no proposal to
 deprecate or replace any of them.
 
-### The caller set as the unit of analysis
+#### The caller set as the unit of analysis
 
 Ethereum's own coverage is uneven in a way that turns out to be informative.
 `ecRecover` has a plan. KZG has a stated plan: the roadmap acknowledges that
@@ -1296,7 +1296,7 @@ A bounded set of maintained callers can be coordinated through an upgrade. An
 unbounded set of abandoned contracts cannot, by anyone, at any price. This is why
 the plans exist where they exist.
 
-### Practical consequences
+#### Practical consequences
 
 For stateless precompiles with unbounded callers, the available levers are
 limited:
@@ -1346,9 +1346,9 @@ account-semantics question, and it should not inherit that low priority.
 
 ---
 
-# Part IV: Recommendations
+## Part IV: Recommendations
 
-## 15. Ordering the work
+### 15. Ordering the work
 
 Ownership and severity, not novelty, should set the
 order:
@@ -1396,9 +1396,9 @@ Applied to GOAT:
 
 ---
 
-# Part V: Pitfalls and open items
+## Part V: Pitfalls and open items
 
-## 16. Recurring pitfalls
+### 16. Recurring pitfalls
 
 The following patterns recur throughout the preceding analysis.
 
@@ -1477,7 +1477,7 @@ The following patterns recur throughout the preceding analysis.
   enabling a new key type before counterparties can verify it breaks
   connectivity, and the failure is silent at upgrade time.
 
-## 17. Remaining open items
+### 17. Remaining open items
 
 The list is short, and none of its items blocks the recommendations:
 
@@ -1517,7 +1517,7 @@ The list is short, and none of its items blocks the recommendations:
 - No second L2 has been examined, so Part I's taxonomy is structural reasoning
   supported by one case, not a survey.
 
-## References
+### References
 
 Primary sources, each verified live: the base-layer and GOAT sources on
 2026-07-31, the aggregation sources on 2026-08-01, the script-cost sources on
