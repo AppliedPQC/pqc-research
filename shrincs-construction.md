@@ -198,7 +198,7 @@ tree shape enters secret-key derivation; see section 8.
 
 All are built from SHA-256, in a common form:
 
-```py
+```
 sha256(pk_seed ‖ zeros(48) ‖ ADRS ‖ M)[:16]
 ```
 
@@ -218,7 +218,7 @@ block, so the compression of that block can be precomputed once and reused.
 
 `H_grind` is the one exception, consuming only `ADRS[:10]`:
 
-```py
+```
 sha256(pk_seed ‖ zeros(48) ‖ ADRS[:10] ‖ digest ‖ zeros(4) ‖ counter)[:16]
 ```
 
@@ -237,7 +237,8 @@ outside the consumed window, both sides compute the same value.
 ### Message digests and the cross-binding
 
 The two message digest functions are structurally symmetric: **each takes its own root as
-a dedicated parameter and receives the other path's root inside `M`**.
+a dedicated parameter and receives the other path's root inside `M`**. The two calls, as
+the draft's reference implementation makes them:
 
 ```py
 # stateless: what is actually signed is sf_root ‖ message
@@ -354,51 +355,12 @@ Two consequences follow:
    the same count the signer performs. A consensus verifier can therefore price the worst
    case exactly.
 
-The second claim is the one worth checking rather than taking on faith. The cell below
-is the same computation in Python, so that it runs here in the page: the
-specification's `H_grind` and `base_2b`, over 300 messages. It reports how many counters
-grinding consumed, and the number of chain steps each side walks.
-
-<div class="sage"><script type="text/x-sage">import hashlib
-def sha256(b): return hashlib.sha256(b).digest()
-def zeros(n): return bytes(n)
-CHAIN_BITS, CHAIN_COUNT = 4, 32
-W = 1 << CHAIN_BITS                                   # Winternitz w = 16
-TARGET = -(-CHAIN_COUNT * (W - 1) // 2)               # WOTS_C_CONSTANT_SUM = 240
-def base_2b(x, b, outlen):                            # FIPS 205 base_2b
-    out, j, acc, filled = [], 0, 0, 0
-    for _ in range(outlen):
-        while filled < b:
-            acc = (acc << 8) + x[j]; j += 1; filled += 8
-        filled -= b
-        out.append((acc >> filled) % (1 << b))
-    return out
-def H_grind(pk_seed, ADRS, digest, counter):          # as specified
-    return sha256(pk_seed + zeros(48) + ADRS[:10] + digest + zeros(4)
-                  + int(counter).to_bytes(2, 'big'))[:16]
-def wots_c_map_digest(pk_seed, digest, ADRS, counter):
-    idx = base_2b(H_grind(pk_seed, ADRS, digest, counter), CHAIN_BITS, CHAIN_COUNT)
-    return idx if sum(idx) == TARGET else None
-pk_seed = bytes(range(16))
-ADRS = bytearray(22); ADRS[9] = 22                    # SF_WOTS_C_GRIND
-tries, signer, verifier = [], set(), set()
-for m in range(300):
-    digest = sha256(("message %d" % m).encode())      # an H_msg_sf output
-    for c in range(1 << 16):
-        idx = wots_c_map_digest(pk_seed, digest, ADRS, c)
-        if idx is not None: break
-    tries.append(c + 1)
-    signer.add(sum(idx))                              # steps the signer walks
-    verifier.add(sum(W - 1 - d for d in idx))         # steps the verifier walks
-print("target sum, 32 chains of 4 bits :", TARGET)
-print("counters ground, mean / max     : %.1f / %d" % (sum(tries) / len(tries), max(tries)))
-print("signer chain steps over 300 msgs:", signer)
-print("verifier chain steps, the same  :", verifier)
-print("worst case equals average       :", len(verifier) == 1)</script></div>
-
-Grinding costs about 64 hashes on average, which is the reciprocal of the probability
-that 32 uniform four-bit values sum to their mean. Both step counts are the single value
-240 across every message.
+The second claim is the one worth checking rather than taking on faith, and it is
+checked. `verify_parameter_consistency` in the Rust implementation re-derives it from
+the defining equation rather than restating it, and the known-answer tests exercise it
+on every signature they cover. Running the specification's own `H_grind` and `base_2b`
+over 300 messages gives a mean of 64.4 counters ground, and a chain-step count on both
+sides that is the single value 240 every time.
 
 > The same idea, Target-Sum Winternitz, appears in Ethereum's LeanSig, under a different
 > motivation. LeanSig needs it because an aggregation circuit is sized for the worst case;
@@ -521,7 +483,8 @@ state counter at 2:
 
 [![FXMSS in three parts: the signer choosing a shape, the state counter selecting a leaf, and a verifier that climbs on depth alone](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss.png)
 
-`fxmss_pubkey_from_sig` receives only `(leaf_index, leaf_height, signature)`:
+`fxmss_pubkey_from_sig`, again from the draft's reference implementation, receives only
+`(leaf_index, leaf_height, signature)`:
 
 ```py
 assert len(xmss_auth) == leaf_depth * 16          # path length must match the depth
@@ -536,76 +499,12 @@ No shape byte is referenced. Whether the tree is UXMSS, BXMSS, or some other sha
 verifier has a single code path, which bounds what consensus code has to review and
 optimise.
 
-The claim that one code path covers every shape is also checkable. The cell below builds
-a UXMSS tree of depth 4 and a BXMSS tree of depth 3 using the draft's own `leaf_select`
-and leaf predicate, then verifies every signature in both budgets through a single
-`verify` that is never given the shape. The WOTS+C leaf is replaced by a hash commitment,
-since the preceding cell covers that part; the tree logic, the authentication path and the
-climb are as specified.
-
-<div class="sage"><script type="text/x-sage">import hashlib
-def sha256(b): return hashlib.sha256(b).digest()
-def zeros(n): return bytes(n)
-N, FXMSS_HEIGHT = 16, 255
-UNBALANCED, BALANCED = 0, 1
-SF_WOTS_C_PK, SF_FXMSS_TREE = 17, 18
-def adrs(node_depth, node_index, typ):                # stateful ADRS, 22 bytes
-    A = bytearray(22)
-    A[0] = FXMSS_HEIGHT - node_depth                  # node_height
-    A[1:9] = int(node_index).to_bytes(8, 'big')       # node_index
-    A[9] = typ
-    return bytes(A)
-def H(pk, A, M): return sha256(pk + zeros(48) + A + M)[:N]
-def leaf_select(shape, depth, ctr):                   # shrincs_sf_leaf_select
-    if depth == 0: return None
-    if shape == UNBALANCED:
-        if ctr == depth: return (0, FXMSS_HEIGHT - depth)
-        if ctr <  depth: return (1, FXMSS_HEIGHT - 1 - ctr)
-    elif shape == BALANCED:
-        if ctr < 2 ** depth: return (ctr, FXMSS_HEIGHT - depth)
-    return None                                       # budget exhausted
-def is_leaf(shape, depth, nd, ni):                    # the draft's leaf predicate
-    return (ni == 1 or nd == depth) if shape == UNBALANCED else nd == depth
-def node(pk, sk, shape, depth, nd, ni):
-    if is_leaf(shape, depth, nd, ni):                 # stands for the WOTS+C public key
-        return H(pk, adrs(nd, ni, SF_WOTS_C_PK), sk)
-    l = node(pk, sk, shape, depth, nd + 1, ni * 2)
-    r = node(pk, sk, shape, depth, nd + 1, ni * 2 + 1)
-    return H(pk, adrs(nd, ni, SF_FXMSS_TREE), l + r)
-def sign(pk, sk, shape, depth, ctr):                  # signer knows the shape
-    ni, height = leaf_select(shape, depth, ctr)
-    nd = FXMSS_HEIGHT - height
-    auth = [node(pk, sk, shape, depth, nd - k, (ni >> k) ^ 1) for k in range(nd)]
-    return height, ni, auth
-def verify(pk, sf_root, leaf, height, leaf_index, auth):
-    leaf_depth = FXMSS_HEIGHT - height                # the shape is never consulted
-    if len(auth) != leaf_depth: return False          # path length must match depth
-    if leaf_index >= 2 ** min(64, leaf_depth): return False
-    n = leaf
-    for k in range(leaf_depth):                       # direction from the index bits
-        A = adrs(leaf_depth - k - 1, leaf_index >> (k + 1), SF_FXMSS_TREE)
-        n = H(pk, A, auth[k] + n) if (leaf_index >> k) & 1 else H(pk, A, n + auth[k])
-    return n == sf_root
-def sig_size(leaf_depth):                             # 1 + R + index + 514 + 16*depth
-    return 1 + 16 + -(-min(leaf_depth, 64) // 8) + 514 + 16 * leaf_depth
-pk, sk = bytes(range(16)), bytes(range(16, 32))
-for shape, depth, name in ((UNBALANCED, 4, "UXMSS"), (BALANCED, 3, "BXMSS")):
-    sf_root = node(pk, sk, shape, depth, 0, 0)
-    budget = depth + 1 if shape == UNBALANCED else 2 ** depth
-    sizes, ok = [], True
-    for ctr in range(budget):
-        height, ni, auth = sign(pk, sk, shape, depth, ctr)
-        nd = FXMSS_HEIGHT - height
-        leaf = H(pk, adrs(nd, ni, SF_WOTS_C_PK), sk)
-        ok &= verify(pk, sf_root, leaf, height, ni, auth)
-        sizes.append(sig_size(nd))
-    assert leaf_select(shape, depth, budget) is None  # budget is exactly exhausted
-    print("%s depth=%d budget %-2d  all verify: %-5s  sizes %s"
-          % (name, depth, budget, bool(ok), sizes))
-print("one verifier, never given the shape byte, accepted both trees")</script></div>
-
-The sizes it prints are those in the two figures above, recomputed from
-`1 + 16 + ⌈min(depth,64)/8⌉ + 514 + 16·depth` rather than copied.
+The claim that one code path covers every shape is likewise under test rather than
+asserted. The crate's vectors cover 46 stateful signatures across four tree shapes,
+UXMSS and BXMSS at two depths each, and every one of them verifies through a single
+`fxmss_pubkey_from_sig` that is never given the shape byte. The sizes those vectors
+carry are the ones in the two figures above, produced by the draft's reference
+implementation rather than copied from it.
 
 ### Where the shape is bound
 
@@ -707,12 +606,41 @@ to hash-based signatures, which have no algebraic structure to aggregate over. F
 protocols whose custody rests on n-of-n MuSig2, such as the BitVM2 peg, a post-quantum
 replacement is therefore not within the scope of changing an output type.
 
-## 13. Deployment prerequisites
+## 13. Open problems
 
-The draft specifies cryptography only, decoupled from consensus validation rules.
-Deployment needs at least one further BIP defining a new output type, which this draft
-does not define. Test vectors, unit tests, a security proof and an optimised
-implementation are all outstanding.
+The draft is a first draft, and says so. What is outstanding falls into three kinds, and
+they are not equally hard.
+
+**Missing artefacts, which are work rather than research.** There is no security proof;
+the draft records one as TODO and thanks Andreas Hülsing for input on it. There are no
+comprehensive test vectors, which the draft states are required to move the proposal from
+Draft to Complete. There are no unit tests and no optimised implementation, the reference
+being described by its own authors as naive, inefficient and non-constant-time. Each of
+these is known, scoped, and merely undone.
+
+**Deployment questions that belong to Bitcoin rather than to the scheme.** The draft
+specifies cryptography decoupled from consensus, so at least one further BIP defining a
+new output type is needed and is not written. The verification cost per byte argues for
+a witness discount, and the draft makes that argument without defining one. The parameter
+set is a multi-dimensional trade between size and speed which the working group expects
+to be contested; the two components can be reparameterised independently, so the space is
+larger than a single choice.
+
+**What follows from the missing algebraic structure.** Section 12 states the absence
+itself; what is open is what to do about it. A hybrid with BIP-340 works by simple
+concatenation, and the draft declines to define a dedicated combiner, so a deployment
+wanting strong unforgeability under partial compromise has that to design. Whether an
+HD-wallet arrangement can be built for a scheme with no rerandomisable public key is a
+question the draft raises and leaves open.
+
+Alongside those, the state counter remains the sharp edge. The reference implementation
+performs no state management at all and takes the counter from its caller, which is
+honest about where the difficulty lives: the rules in section 9 are MUST-level and
+unenforceable by the scheme itself. How a wallet presents a signature that grows as a key
+is used, and how backup and recovery work when restoring state is forbidden, are user
+experience questions the draft raises and does not answer.
+
+## 14. Where this sits in the BIP process
 
 The `Requires` field of BIP-361 reads "TBD Post Quantum Signature BIP". SHRINCS is the
 first public candidate for that missing document, and it has not been submitted to the
