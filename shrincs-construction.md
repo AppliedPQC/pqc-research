@@ -257,13 +257,33 @@ carried over to a different public key.
 
 ## 7. WOTS+C: constant-sum encoding in place of a checksum
 
-WOTS+ needs checksum chains because, with message chains alone, an adversary holding
-σ = Hᴰ(s) can hash further to Hᴰ′(s) for D′ > D and forge a larger value. The checksum
-chain σ₁ = H^(w−1−D)(s₁) makes any increase in D require hashing the checksum chain
-backwards, which is infeasible.
+### Winternitz signatures, briefly
 
-WOTS+C takes a different route. It adds no checksum, and instead requires the chain
-indexes to sum to a constant.
+Both of the one-time signatures here are Winternitz, so it is worth having the base
+construction in view before the variation.
+
+A **chain** is a hash applied repeatedly to a secret: `s`, `H(s)`, `H²(s)`, and so on.
+Publishing the `d`-th link signs the digit `d`, because a verifier can walk the chain
+forward to the end but cannot walk it back without inverting `H`. The end of the chain,
+`H^(w−1)(s)`, is the public value. With `w` the Winternitz parameter, one chain carries
+`lg w` bits, and a digest is signed by cutting it into digits and giving each its own
+chain.
+
+That much is forgeable on its own. An adversary holding `Hᴰ(s)` can hash further to get
+`Hᴰ′(s)` for any `D′ > D`, which is a valid signature on every larger digit. The fix is a
+second kind of chain carrying the complement of the digit sum, so that raising a message
+digit lowers a checksum digit, and forging upwards means walking a checksum chain
+*backwards*.
+
+[![WOTS+ at w = 8: key generation, signing the digit 2, verification, and why the checksum chain is needed](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-plus.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-plus.png)
+
+That is WOTS+, and WOTS-TW is the same construction with the chaining function replaced
+by a tweakable hash, which is what makes each position in each chain a distinct function
+and what gives SPHINCS+ its tight security proof. Everything above holds for it, with
+three checksum chains over 32 message chains at `w = 16`.
+
+WOTS+C takes a different route to the same end. It adds no checksum, and instead admits
+only digests whose chain indexes already sum to a constant.
 
 ```
 requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
@@ -277,13 +297,48 @@ along the chain from the secret key. A verifier can only continue forwards:
 With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
 The signer **grinds** a 16-bit counter until the sum lands on it:
 
-```py
-for i in range(2**16):
-    hashed  = H_grind(pk_seed, ADRS, message_digest, i)
-    indexes = base_2b(hashed, 4, 32)
-    if sum(indexes) == 240:
-        return (i, indexes)     # counter i goes into the signature
+```rust
+pub fn wots_c_grind<S: HashSuite>(
+    pk_seed: &[u8],
+    digest: &[u8],
+    adrs: &mut Adrs,
+) -> Option<(u16, Vec<u32>)> {
+    adrs.set_type(SF_WOTS_C_GRIND);
+    for i in 0..=u16::MAX {
+        let hashed = S::h_grind(pk_seed, adrs, digest, i);
+        let idx = base_2b(&hashed, WOTS_C_CHAIN_BITS, WOTS_C_CHAIN_COUNT);
+        if idx.iter().map(|&x| x as usize).sum::<usize>() == WOTS_C_CONSTANT_SUM {
+            return Some((i, idx));
+        }
+    }
+    None
+}
 ```
+
+The counter is returned alongside the indexes because the signature carries it: a
+verifier cannot search for it, and recomputes once from the value it is given.
+
+```rust
+pub fn wots_c_map_digest<S: HashSuite>(
+    pk_seed: &[u8],
+    digest: &[u8],
+    adrs: &mut Adrs,
+    counter: u16,
+) -> Option<Vec<u32>> {
+    adrs.set_type(SF_WOTS_C_GRIND);
+    let idx = base_2b(
+        &S::h_grind(pk_seed, adrs, digest, counter),
+        WOTS_C_CHAIN_BITS,
+        WOTS_C_CHAIN_COUNT,
+    );
+    (idx.iter().map(|&x| x as usize).sum::<usize>() == WOTS_C_CONSTANT_SUM).then_some(idx)
+}
+```
+
+Both are from [`AppliedPQC/shrincs-rs`](https://github.com/AppliedPQC/shrincs-rs)
+unchanged. The `None` on the last line of `wots_c_grind` is the case the draft puts
+below 2⁻¹⁴⁵⁰; the `None` from `wots_c_map_digest` is a verifier rejecting a counter
+whose indexes miss the sum, which is the check that makes the encoding binding.
 
 [![The grinding loop: counter, H_grind, base_2b, and the constant-sum test](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/wots-c-grinding.png)
 
@@ -301,9 +356,9 @@ Two consequences follow:
    case exactly.
 
 The second claim is the one worth checking rather than taking on faith. The cell below
-is the specification's `H_grind`, `base_2b` and `wots_c_map_digest` verbatim, run over 300
-messages. It reports how many counters grinding consumed, and the number of chain steps
-each side walks.
+is the same computation in Python, so that it runs here in the page: the
+specification's `H_grind` and `base_2b`, over 300 messages. It reports how many counters
+grinding consumed, and the number of chain steps each side walks.
 
 <div class="sage"><script type="text/x-sage">import hashlib
 def sha256(b): return hashlib.sha256(b).digest()
