@@ -408,6 +408,24 @@ that 32 uniform four-bit values sum to their mean. Both step counts are the sing
 
 ## 8. FXMSS: an XMSS of signer-chosen shape
 
+### XMSS, briefly
+
+A one-time key signs once, so a scheme that signs more than once needs many of them and
+a way to publish them all as one value. XMSS is the standard answer: put the hashes of
+the one-time public keys at the leaves of a Merkle tree and publish the root.
+
+A signature then carries three things. The one-time signature itself; the **index** of
+the leaf that made it; and the **authentication path**, one sibling per level from that
+leaf to the root. A verifier recovers the leaf from the one-time signature and climbs,
+combining with each sibling in turn, and the index tells it which side to combine on.
+Reaching the published root is what verification means.
+
+[![XMSS at height 3, signing with leaf 2: the tree, the authentication path, what the signature carries, and the verifier's climb](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/xmss.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/xmss.png)
+
+Each leaf may be used once, which is what makes XMSS stateful: the signer has to record
+which leaves are spent. That is the constraint FXMSS inherits and the state counter of
+section 9 manages, and it is why the scheme carries a stateless fallback at all.
+
 ### Differences from XMSS
 
 | | XMSS, inside the stateless path | **FXMSS**, the stateful path |
