@@ -40,7 +40,7 @@ read through the GitHub API and local clones, and, for section 9, the BABE
 and Argo MAC papers alongside GOAT's own
 [Deferred Binding design doc](https://github.com/GOATNetwork/bitvm2-gc/blob/feat/goat-bitvm3/docs/partial_binding_we.tex).
 Claims are stated as verified; checks still outstanding are listed under
-*Remaining open items* (section 17).
+*Remaining open items* (section 16).
 
 ---
 
@@ -373,7 +373,7 @@ is silent until connectivity breaks.
 
 ### 7. Summary of findings
 
-Six of the seven surfaces below carry quantum-exposed cryptography, and they are
+Five of the six surfaces below carry quantum-exposed cryptography, and they are
 not equally GOAT's to fix. Row numbers refer to the taxonomy of section 2, so
 that the case study and the framework can be read against each other.
 
@@ -381,7 +381,6 @@ that the case study and the framework can be read against each other.
 | --- | --- | --- | --- | --- | --- |
 | 1 | Bitcoin L1 outputs | — | secp256k1 / Schnorr | broken by Shor | **Bitcoin, not GOAT** |
 | 1–2 | Peg custody | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | MuSig2 over a **Taproot key path** | broken by Shor, **and exposed from output creation** | **GOAT** |
-| 2 | Bridge attestation | [`goat`](https://github.com/GOATNetwork/goat) relayer module | secp256k1 / Schnorr | broken by Shor | **GOAT** |
 | 3 | Bridge proof system | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | [Ziren](https://github.com/ProjectZKM/Ziren) STARK (**DLOG multiset memory check**) → **Groth16/BN254** wrap → garbled | broken at three layers | **GOAT and ZKM** |
 | 4 | Bridge bit commitments | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) → [BitVM](https://github.com/GOATNetwork/BitVM) | **Winternitz OTS** | **already PQ-safe** | — |
 | 5 | Consensus keys | [`goat`](https://github.com/GOATNetwork/goat) (CometBFT) | **secp256k1** | broken by Shor | **GOAT** |
@@ -418,7 +417,7 @@ same conservative assumption as SLH-DSA. The implementation lives in GOAT's
 [BitVM](https://github.com/GOATNetwork/BitVM) fork and is referenced throughout
 the bridge node. (Establishing this required enumerating the git tree directly:
 GitHub code search does not index forks, a hazard recorded among the pitfalls
-of section 16.)
+of section 15.)
 
 Groth16 is a wrapper, not the proving system. `bitvm2-node` depends on
 [Ziren](https://github.com/ProjectZKM/Ziren), a FRI/STARK zkVM over Poseidon
@@ -615,11 +614,9 @@ decrypts the payout secret through the scheme's own correctness property, and
 spends the hashlocked UTXO. No garbling is broken, no hash is inverted, and no
 step of the protocol misbehaves.
 
-This is the fourth instance of the wrapper pitfall in this stack, and the least
-conspicuous. The first three (Winternitz commitments carrying a
-Groth16 proof, garbled circuits garbling a Groth16 verifier, and the prospective
-error of proving BLS verification inside `leanVM`, section 13) at least look
-like wrappers. Here the vocabulary actively argues the other way: *witness
+This is the third instance of the wrapper pitfall in this stack, and the least
+conspicuous. The first two (Winternitz commitments carrying a Groth16 proof,
+and garbled circuits garbling a Groth16 verifier) at least look like wrappers. Here the vocabulary actively argues the other way: *witness
 encryption*, *garbled circuit*, *hashlock*, *Lamport* are all post-quantum-safe
 terms, three of the four on-chain primitives are indeed post-quantum, and the
 security proof is a clean reduction. The pairing survives in the *relation being
@@ -645,7 +642,7 @@ Two DLog dependencies in one protocol, reached by different routes, is a
 planning-relevant fact: [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276)
 and its [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash)
 prototype are now load-bearing for two surfaces, not one, which strengthens the
-case for phase 3 of the ordering in section 15.
+case for phase 2 of the ordering in section 14.
 
 One version detail affects which Ziren fixes are inherited: GOAT's note cites
 Ziren 1.2.5, but the implementation pins 1.2.4.
@@ -984,20 +981,11 @@ without waiting on anyone. Such policy is advisable and should be recorded
 explicitly, but it should be ranked as risk-bounding rather than as a fix, and
 it does not displace the proof-system work.
 
-### 12. goat: relayer and consensus
+### 12. goat: consensus keys
 
-The surfaces in this section admit the least costly migrations in the stack.
+The consensus keys admit the least costly migration in the stack.
 
-Relayer attestation keys are the bridge trust root, held as a tagged union
-over secp256k1 and Schnorr. The union is an extensibility point, so adding an
-ML-DSA-65 variant extends an existing pattern. The blocker is a fixed-length
-gate in signature verification, which rejects any signature that is not
-exactly 64 bytes. An ML-DSA-65 signature is 3309 bytes and its public key
-1952 bytes, both confirmed against an independent ACVP-verified FIPS 204
-implementation. Until that check is per-variant, the verification path is
-structurally incapable of accepting a post-quantum signature.
-
-On consensus keys, Cosmos SDK v0.55 registers ML-DSA-65 as a validator
+Cosmos SDK v0.55 registers ML-DSA-65 as a validator
 consensus key type, opt-in behind
 `genesis.consensus_params.validator.pub_key_types`, with validator key rotation
 shipping in the same release. GOAT pins SDK v0.53.8 from upstream, so this is
@@ -1029,187 +1017,13 @@ aggregated them: a commit is an array of one signature per validator (section 6)
 so adopting ML-DSA-65 costs bytes in proportion to the validator set and nothing
 else. The work is a dependency upgrade and a block-parameter re-tune.
 
-The relayer vote key is the opposite case, and the distinction is subtle. Its
-aggregation is not inherited from Cosmos: it is GOAT's own code. Upstream has
-no aggregation to extend, and the attempts to add it have not landed, so no
-amount of tracking Cosmos releases produces an answer for this surface. It is
-GOAT's alone, and it is the one place in this stack where the post-quantum move
-costs a *property* rather than bytes.
-
 The chain does not appear to use IBC, so the light-client hazard that
 dominates Cosmos post-quantum migration (enabling a key type counterparties
 cannot verify stops packet flow and expires the client) appears not to apply.
 This should be confirmed against deployment reality rather than the dependency
 manifest alone.
 
-### 13. The relayer's BLS vote key
-
-Section 12's recommendation addresses the attestation key. That is not the whole
-picture, because the relayer carries three distinct key types, not one:
-
-| Key | Scheme | Purpose |
-| --- | --- | --- |
-| attestation key (tagged union) | secp256k1 **or** Schnorr | attestation / proposals |
-| transaction key | secp256k1 | transaction authorisation |
-| vote key | **BLS12-381 G2, 96-byte compressed** | voting, verified in aggregate |
-
-Adding an ML-DSA-65 variant to the attestation key type remains correct and remains the
-cheapest first move, but it addresses only the attestation key. The vote key is a different problem, and a much harder one,
-because its value is aggregation. BLS lets N relayer votes verify as one
-48-byte signature. No standardised post-quantum signature aggregates: ML-DSA and
-SLH-DSA have no aggregation, so replacing BLS naively turns one signature into
-N, at 3309 bytes each. For twenty relayers that is roughly 66 KB where there was
-48 bytes.
-
-That aggregation is in use, not merely available, is settled at the
-verification site rather than by the presence of an aggregate API. The
-verification is specifically the many-signers, one-message case: a
-participation bitmap selects voters, participation is checked against a
-threshold, and one aggregate signature is verified against the selected public
-keys over a single sign-document. Relayer consensus is therefore a threshold
-vote carried by one 48-byte signature regardless of signer count, and the
-bitmap design exists precisely so that signer count can grow.
-
-BLS supplies two properties at once here, and the post-quantum replacement is
-two questions rather than one. It aggregates: N independently generated keys
-produce one constant-size object. Separately, the surrounding code supplies a
-threshold, since the bitmap selects voters and the participation count is checked
-against `Threshold()`. GOAT therefore uses BLS as an *aggregate signature* with
-the threshold enforced in application logic, not as a threshold signature. The
-distinction decides which replacements are like-for-like. A post-quantum
-aggregation scheme preserves the bitmap, preserves per-signer attribution, and
-needs no key-generation ceremony. A threshold signature moves the threshold into
-the cryptography, requires a distributed key generation, and produces a signature
-that does not identify who signed.
-
-#### The limits of zkVM wrapping for BLS verification
-
-A natural approach is to wrap the existing BLS verification in a post-quantum
-zkVM: prove inside `leanVM` that the aggregate verified, and inherit the zkVM's
-hash-based soundness. That does not work, in two distinct senses, and the second
-is a restatement of this report's central pitfall.
-
-Mechanically, there is nothing to build on. `leanVM` contains no BLS or
-pairing code at all; it is built from KoalaBear field arithmetic, Poseidon,
-WHIR and XMSS, with recursive aggregation as a dedicated component. It is
-purpose-built to recursively aggregate *hash-based* signatures. A BLS verifier could be written as a guest program, but
-emulating BLS12-381 pairing arithmetic over a 31-bit field is precisely the work
-that EVM chains give a native precompile to avoid.
-
-And even if it were built, it would buy nothing. Proving "this BLS aggregate
-verified" inside a hash-based zkVM yields a post-quantum-sound *proof* of a
-quantum-broken *statement*. An adversary who can forge BLS signatures forges one
-and then honestly proves that it verified; the zkVM faithfully attests to a true
-claim about a dead assumption. This is the same error as Winternitz commitments
-carrying a Groth16 proof, garbled circuits garbling a Groth16 verifier, and
-witness-encrypting against the Groth16 relation (section 9): the fourth
-instance in this one stack, and the only one that would be a *prospective*
-mistake rather than an existing one.
-
-What `leanVM` offers is the removal of the need for BLS. BLS was
-chosen for one property, aggregation. Hash-based signatures are post-quantum but
-do not aggregate. Recursive proving restores that property. The path is
-therefore:
-
-```
-BLS                    hash-based signatures       + recursive aggregation
-(aggregates, broken) →  (safe, N x 3309 bytes)  →  (aggregation restored)
-```
-
-not "keep BLS and add a zkVM". The ordering matters: the signature scheme is
-replaced first, and recursion recovers what the replacement costs.
-
-Concretely for GOAT, the aggregate verification is not wrapped, it is
-replaced, with the threshold-and-bitmap voting logic rebuilt around a hash-based
-scheme plus recursion. GOAT already operates a zkVM (Ziren) and a garbling
-stack, so the ingredients are unusually close to hand, but this is an
-architectural workstream, not a key-type change, and it should be planned
-separately from the attestation-key work.
-
-#### Threshold signing
-
-Recursion is not the only way to recover a constant-size vote. The requirement at
-the verification site is narrower than aggregation in general: many signers, one
-message, checked against a threshold. A threshold signature has that shape
-natively, since N parties jointly emit one ordinary signature, and it leaves the
-verifier untouched.
-
-It is not, however, a smaller version of aggregation. A single signing key exists
-as a mathematical object even where it is never materialised, which requires
-either a distributed key generation or a dealer; the signer set is fixed at key
-generation and changing it requires re-sharing; and the resulting signature does
-not identify its contributors. Aggregation has none of the first three properties
-and does have the last. The two are incomparable rather than ordered.
-
-| | Parties | Verifier | Communication |
-| --- | --- | --- | --- |
-| [Hermine](https://eprint.iacr.org/2026/419) (Borin et al., ASIACRYPT 2026) | **N ≤ 64**; concrete parameters derived for N ≤ 16, T ≤ 8 | Raccoon, 11.3 KB signature | 73.2 KB per party |
-| [Quorus](https://eprint.iacr.org/2025/1163) (Bienstock et al., USENIX 2026) | **any number**, t-of-n | unmodified ML-DSA; signature and key sizes match | ~100 KB per party per rejection-sampling round |
-| [Efficient Threshold ML-DSA](https://eprint.iacr.org/2026/013) (Celi et al.) | up to **6** | unmodified ML-DSA | ≤ 1 MB per party |
-
-Two of the three keep the chain verifying one standard signature with a stock
-FIPS 204 verifier however many relayers voted, which is the constant-size
-property that made BLS attractive. Hermine instead emits a Raccoon signature, so
-adopting it changes the verification scheme as well as the signing protocol, and
-Raccoon is itself a NIST additional-signature submission rather than a standard.
-
-The price is a change in signing shape rather than in key type, and it is smaller
-than it was. Today each relayer signs independently and offline, and the bitmap
-records who did; a threshold protocol replaces that with a coordinated session
-among the selected quorum. Hermine's first round is independent of both the
-message and the signer set, so it can be preprocessed and the online phase is a
-single round, and its non-interactive identifiable abort attributes a failed
-session from the transcript alone, which is what a slashing design requires. The
-residual cost is that the online round needs the quorum simultaneously available,
-where the present design tolerates arbitrary staggering.
-
-Two obstacles are larger than the protocol shape. The first is key generation.
-Hermine assumes a trusted dealer and leaves distributed key generation for
-Vandermonde sharing as an open problem; the compact construction of del Pino and
-Niot omits it and notes that adding it would increase signature size. For a peg
-trust root a dealer is not acceptable, because it means one party holds the whole
-key at setup. Among lattice threshold schemes only Pelican and Olingo ship a
-distributed key generation, and neither offers the feature set above. This, and
-not signature size, is what currently blocks deployment.
-
-The second is attribution. The bitmap does double duty: it selects voters and it
-records participation. A threshold signature removes the second function, since
-the output is indistinguishable from a single signer's. Where relayer rewards or
-slashing depend on who voted, that logic has to be rebuilt or carried separately.
-
-Standardisation has moved without arriving. NIST's first call for multi-party
-threshold schemes, [IR 8214C](https://csrc.nist.gov/projects/threshold-cryptography),
-reached final on 2026-01-20 with preview submissions due 2026-08-07, and Hermine
-has been submitted to it. A submission is not a selection, and for a peg trust
-root, depending on a construction with no FIPS number and no validation
-programme remains a governance decision as much as a technical one. It argues for
-sequencing the attestation key, which needs no aggregation at all, ahead of the
-vote key.
-
-Two adjacent results do not fit this surface. The compact scheme of del Pino and
-Niot reaches 2.7 KB, close to a single Dilithium signature, but only at N = 8,
-because its replicated secret sharing grows as a binomial coefficient; Hermine's
-Vandermonde sharing is what raises the ceiling to 64, at roughly four times the
-signature size. [MuSig-L](https://eprint.iacr.org/2022/1036) is the lattice
-analogue of MuSig2 and needs no key-generation ceremony, but it is n-of-n rather
-than t-of-n and reports no concrete parameters.
-
-#### Post-hoc signature aggregation
-
-The remaining option belongs with aggregation rather than with the threshold
-schemes above: squash N existing ML-DSA signatures into one small object without
-changing how anyone signs. It is the least developed of the three.
-[Boudgoust and Takahashi](https://eprint.iacr.org/2023/159) (ESORICS 2023) gave
-the first Fiat-Shamir-with-aborts aggregate signature, applicable to Dilithium,
-and report "quite small compression rates" in their own words; it also aggregates
-*distinct* messages, where this use case has one. The strong result in this line,
-[aggregating with LaBRADOR](https://eprint.iacr.org/2024/311) (Aardal et al.,
-CRYPTO 2024), is for Falcon, not ML-DSA. That asymmetry is a
-design signal: if aggregability is a first-order requirement, it is an argument
-about *which* post-quantum scheme to adopt, not a problem to be solved after
-adopting ML-DSA.
-
-### 14. goat-geth: the divergence, measured
+### 13. goat-geth: the divergence, measured
 
 Measured against upstream
 [`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum),
@@ -1348,13 +1162,13 @@ account-semantics question, and it should not inherit that low priority.
 
 ## Part IV: Recommendations
 
-### 15. Ordering the work
+### 14. Ordering the work
 
 Ownership and severity, not novelty, should set the
 order:
 
 1. Bridge attestation keys (row 2). Highest value per unit of control. The
-   operator or relayer set is the peg's trust root; compromising a threshold is
+   operator set is the peg's trust root; compromising a threshold is
    equivalent to compromising the peg. It is entirely the L2's to change, and it
    can usually be rolled out with dual signing, giving rollback at every step.
 2. Bridge proof system (row 3). Highest severity, and the hardest problem
@@ -1385,20 +1199,19 @@ Applied to GOAT:
 
 | Phase | Action | Why here |
 | --- | --- | --- |
-| 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | The relayer's 64-byte signature gate shows these assumptions are load-bearing and invisible |
-| 1 | Relayer: add an ML-DSA-65 variant to the attestation key type, make length checks per-variant, roll out with dual attestation | Highest value per unit of control; the key type is already extensible; dual signing gives rollback at every step |
-| 2 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 11). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
-| 3 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
-| 4 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 10 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
-| 5 | Upgrade the Cosmos SDK to ≥ v0.55; opt into ML-DSA-65 consensus keys; rotate validators; re-tune block-size and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
-| 6 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
+| 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | Fixed-length checks are load-bearing and invisible until a 3309-byte signature arrives (section 15) |
+| 1 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 11). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
+| 2 | Track and support [Ziren #276](https://github.com/ProjectZKM/Ziren/issues/276) through to merge, preferring the LogUp-GKR memory argument over [`feat/lthash`](https://github.com/ProjectZKM/Ziren/tree/feat/lthash) where sharded challenge derivation is acceptable | Gates everything above it, and is the tractable layer: either a primitive swap with a working prototype, or a reversion to the lookup argument Ziren already uses elsewhere, which leaves the hash as the only assumption. Influence and test rather than implement. Now load-bearing twice, since BABE soldering also proves in Ziren (section 9) |
+| 3 | **Stop verifying a pairing on Bitcoin**: re-target the proof pipeline and the `bitvm2-gc` garbling stack away from Groth16/BN254. The FRI half is measured end to end (979 permutations and about 1,958 disprove chunks at 100-bit, with the commitment layer priced), so what remains is the module-lattice verifier | The hardest item here, and the one that ships last. `bitvm2-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. But section 10 finds both post-quantum candidates expressible with the opcodes Bitcoin has, with no soft fork, and the chunk count is the same order as BitVM2's own, so what gates the decision is the lattice verifier's cost rather than feasibility |
+| 4 | Upgrade the Cosmos SDK to ≥ v0.55; opt into ML-DSA-65 consensus keys; rotate validators; re-tune block-size and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
+| 5 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
 
 ---
 
 ## Part V: Pitfalls and open items
 
-### 16. Recurring pitfalls
+### 15. Recurring pitfalls
 
 The following patterns recur throughout the preceding analysis.
 
@@ -1477,7 +1290,7 @@ The following patterns recur throughout the preceding analysis.
   enabling a new key type before counterparties can verify it breaks
   connectivity, and the failure is silent at upgrade time.
 
-### 17. Remaining open items
+### 16. Remaining open items
 
 The list is short, and none of its items blocks the recommendations:
 
@@ -1520,8 +1333,7 @@ The list is short, and none of its items blocks the recommendations:
 ### References
 
 Primary sources, each verified live: the base-layer and GOAT sources on
-2026-07-31, the aggregation sources on 2026-08-01, the script-cost sources on
-2026-08-02, and, on 2026-08-10, `goat`'s `go.mod` `replace` block and every
+2026-07-31, the script-cost sources on 2026-08-02, and, on 2026-08-10, `goat`'s `go.mod` `replace` block and every
 script figure in section 10, which were re-measured rather than re-read.
 
 - BIP-360, *Pay-to-Merkle-Root (P2MR)* — <https://github.com/bitcoin/bips/blob/master/bip-0360.mediawiki>
@@ -1547,14 +1359,6 @@ script figure in section 10, which were re-measured rather than re-read.
 - CometBFT issue #3455, *BLS signature aggregation* — <https://github.com/cometbft/cometbft/issues/3455>
 - CometBFT issue #1305, *Halve commit size with partial ed25519 signatures* — <https://github.com/cometbft/cometbft/issues/1305>
 - CometBFT PRs #3632 and #4763, `crypto/bls12381` signature aggregation, both closed unmerged — <https://github.com/cometbft/cometbft/pull/3632>, <https://github.com/cometbft/cometbft/pull/4763>
-- G. Borin, S. Celi, R. del Pino, T. Espitau, S. Katsumata, G. Niot, T. Prest, K. Takemure, *Hermine: An Efficient Lattice-based FROST-like Threshold Signature*, ASIACRYPT 2026 — <https://eprint.iacr.org/2026/419>
-- R. del Pino, G. Niot, *Finally! A Compact Lattice-Based Threshold Signature*, PKC 2025 — <https://eprint.iacr.org/2025/872>
-- C. Boschini, A. Takahashi, M. Tibouchi, *MuSig-L: Lattice-Based Multi-Signature With Single-Round Online Phase*, CRYPTO 2022 — <https://eprint.iacr.org/2022/1036>
-- A. Bienstock, L. de Castro, D. Escudero, A. Polychroniadou, A. Takahashi, *Quorus: Efficient, Scalable Threshold ML-DSA Signatures from MPC*, USENIX Security 2026 — <https://eprint.iacr.org/2025/1163>
-- S. Celi, R. del Pino, T. Espitau, G. Niot, T. Prest, *Efficient Threshold ML-DSA* — <https://eprint.iacr.org/2026/013>
-- K. Boudgoust, A. Takahashi, *Sequential Half-Aggregation of Lattice-Based Signatures*, ESORICS 2023 — <https://eprint.iacr.org/2023/159>
-- M. Aardal, D. Aranha, K. Boudgoust, S. Kolby, A. Takahashi, *Aggregating Falcon Signatures with LaBRADOR*, CRYPTO 2024 — <https://eprint.iacr.org/2024/311>
-- NIST, *Multi-Party Threshold Cryptography* (IR 8214C, final 2026-01-20) — <https://csrc.nist.gov/projects/threshold-cryptography>
 - W. Beullens, G. Seiler, *LaBRADOR: Compact Proofs for R1CS from Module-SIS* — <https://eprint.iacr.org/2022/1341>
 - *SALSAA — Sumcheck-Aided Lattice-based Succinct Arguments and Applications* — <https://eprint.iacr.org/2025/2124>
 - M. Klooss, R. W. F. Lai, N. K. Nguyen, M. Osadnik, L. Tucci, *RoKoko: Lattice-based Succinct Arguments, a Committed Refinement* — <https://eprint.iacr.org/2026/575>
