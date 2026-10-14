@@ -464,32 +464,43 @@ the more severe exposure.
 
 ## 10. Recurring pitfalls
 
-- **Assertions carried by post-quantum layers.** Garbled circuits, hash
-  commitments, witness encryption and hashlocks survive Shor, but a construction
-  built from them is only as secure as the statement it carries. Where that
-  statement is a pairing equation, the security theorem retains a
-  discrete-logarithm term whatever the primitives (section 6.3).
-- **Wrapping introduced during migration.** Proving inside a post-quantum system
-  that a classical primitive verified leaves the classical assertion in place. A
-  migration step helps only if it changes what is asserted.
-- **Parameters of the symmetric layer.** 128-bit garbling labels sit at the floor
-  of the approved post-quantum range, and warrant an explicit decision where the
-  garbling gates the release of value.
-- **Components built around one verifier.** A garbling or proving stack built for
-  one verifier makes the proof system part of its structure, so replacing the
-  proof system is a rebuild of that component.
-- **Introduction without retirement.** An account with a post-quantum key, or a
-  chain with a post-quantum key type, remains exposed through every path the old
-  key still authorises (section 3).
-- **Size assumptions.** Fixed-length signature checks reject post-quantum
-  signatures, and block, gossip and commit budgets must be re-tuned with the key
-  type, since every validator signs every block.
-- **Forked dependencies.** An L2 on forked dependencies must catch up with
-  upstream before it can inherit upstream post-quantum work, and that gap often
-  sets the schedule more than the cryptography does.
-- **Interoperating light clients.** Where light clients verify a counterparty's
-  signatures with their own cryptography, enabling a new key type before
-  counterparties can verify it breaks connectivity (section 4.3).
+- **Assertions carried by post-quantum layers.** A construction built from
+  post-quantum primitives is only as secure as the statement it carries. Partial
+  binding witness encryption uses garbled circuits, hashlocks and Lamport
+  commitments, yet its security bound contains `Adv_DLog[G1]` on BN254, because
+  the ciphertext is keyed to the Groth16 equation (section 6.3).
+- **Wrapping introduced during migration.** Wrapping a classical proof in a
+  post-quantum one leaves the classical assertion in place: a STARK proving that a
+  Groth16 proof verified, or a zkVM proving that an ECDSA signature verified, is
+  forged as soon as the inner pairing or signature is.
+- **Garbling label width.** 128-bit wire labels under an AES-128 PRF meet only NIST
+  post-quantum category 1. Where the garbling gates a payout secret, 256-bit labels
+  restore category-5 margin at about twice the garbling cost (section 6.3).
+- **Garbling libraries built for one verifier.** A garbled-circuit library whose
+  gadgets implement BN254 field and pairing arithmetic offers nothing to a
+  hash-based verifier, which needs binary-field multipliers and hash gadgets, so
+  replacing the proof system replaces the circuit library (section 6.4).
+- **Introduction without retirement.** A new key leaves the old one usable: an
+  EIP-7702 delegation keeps ECDSA transaction origination, and `ecrecover` still
+  accepts the old key in contracts until EIP-8151 (section 8.1); a chain that
+  admits ML-DSA-65 keys still accepts secp256k1 ones until they are disallowed
+  (section 7).
+- **Fixed-length signature checks.** Code that validates a 64-byte signature
+  rejects a 3,309-byte ML-DSA-65 signature, and such checks sit in transaction
+  decoding, gossip limits and commit validation, where they surface only at
+  activation.
+- **Commit size on the consensus path.** Every validator signs every block, so the
+  commit grows from 1.3 KB to 66 KB per block at 20 validators, about 585 GB a
+  year; block, gossip and storage budgets must be re-tuned together with the key
+  type (section 7).
+- **Forked execution clients.** An EVM client forked from upstream inherits
+  upstream's post-quantum changes, such as EIP-8141 and EIP-8151, only after
+  rebasing onto the release that ships them, so the fork's divergence sets the
+  earliest date at which those changes can reach the L2.
+- **Interoperating light clients.** An IBC light client verifies a counterparty's
+  commits with its own cryptography, so enabling ML-DSA-65 consensus keys before
+  counterparties can verify them halts packet flow and eventually expires the
+  client (section 4.3).
 
 ## 11. Conclusion
 
