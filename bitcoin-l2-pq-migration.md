@@ -383,7 +383,7 @@ that the case study and the framework can be read against each other.
 | 1–2 | Peg custody | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | MuSig2 over a **Taproot key path** | broken by Shor, **and exposed from output creation** | **GOAT** |
 | 3 | Bridge proof system | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | [Ziren](https://github.com/ProjectZKM/Ziren) STARK → **Groth16/BN254** wrap → garbled verifier | broken at the wrap and at the verifiers built on it | **GOAT** |
 | 4 | Bridge bit commitments | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) → [BitVM](https://github.com/GOATNetwork/BitVM) | **Winternitz OTS** | **already PQ-safe** | — |
-| 5 | Consensus keys | [`goat`](https://github.com/GOATNetwork/goat) (CometBFT) | **secp256k1** | broken by Shor | **GOAT** |
+| 5 | Consensus keys | [`goat`](https://github.com/GOATNetwork/goat) (CometBFT) | **secp256k1**, with rotation to ML-DSA-65 designed | broken by Shor until rotated | **GOAT** |
 | 6 | EVM accounts | [`goat-geth`](https://github.com/GOATNetwork/goat-geth) | secp256k1 ECDSA | broken by Shor | GOAT, at tooling cost |
 
 Peg custody spans two rows: the output is an L1 settlement output, but its
@@ -853,45 +853,78 @@ it does not displace the proof-system work.
 
 ### 12. goat: consensus keys
 
-The consensus keys admit the least costly migration in the stack.
+The consensus keys admit the least costly migration in the stack, and they are
+the one surface for which GOAT has published a design ([GOAT Research, *Post-Quantum Consensus Keys on GOAT*](https://hackmd.io/MPLgpnyATaiFfskWDXumRQ)). Validators move from
+secp256k1 to ML-DSA-65 through a coordinated upgrade of CometBFT and the Cosmos
+SDK, which ships the key type (section 6). The SDK is not forked, so the work is
+a dependency upgrade rather than a rebase, although the dependency manifest can
+suggest otherwise at first reading (section 15).
 
-Cosmos SDK v0.55 registers ML-DSA-65 as a validator
-consensus key type, opt-in behind
-`genesis.consensus_params.validator.pub_key_types`, with validator key rotation
-shipping in the same release. GOAT pins SDK v0.53.8 from upstream, so this is
-a dependency upgrade across two minors rather than a fork rebase.
+#### Threat model
 
-This requires demonstration, because the dependency manifest suggests
-otherwise at first reading: it carries a commented-out fork substitution for
-the SDK next to a live one for the EVM client. So `goat-geth` is a real fork
-and the SDK fork is not part of this build. A search that does not distinguish
-the two concludes there are two forks, which inverts the schedule estimate for
-this row: a rebase is the critical path, an upgrade is not.
+The design separates two threats. Forged votes in live consensus become possible
+when a cryptographically relevant quantum computer exists, and not before.
+Forgery of recorded history, an alternative chain assembled from archived commit
+signatures, is a harvest-now, forge-later threat, and the design states its
+consequence directly: blocks signed before activation remain forgeable, because
+they were signed with secp256k1.
 
-GOAT's validators sign with secp256k1, not the Cosmos default of ed25519, and
-the mainnet genesis sets the permitted key types explicitly rather than
-inheriting a default. This changes nothing about the exposure, since both fall
-to Shor, but it does mean the migration lever is already in use: adopting
-ML-DSA-65 is an edit to a value the genesis already carries.
+#### Mechanism
 
-Two version facts bound that work. The pinned CometBFT release predates both
-the ML-DSA-65 key type and the expanded signature budget described in
-section 6. And the configured block-size limit is about 6 MiB, where the
-arithmetic that produces it suggests 50 MiB was intended. Whatever the intent,
-a chain moving to 3309-byte consensus signatures
-should confirm this number deliberately: at 6 MiB the commit is a materially
-larger fraction of the block than the CometBFT defaults assume.
+Each validator keeps a permanent identity, and an index maps its current
+consensus address to that identity, so existing state keeps its shape and a
+validator that never rotates resolves to itself. A validator rotates by calling
+a rotation contract on the EVM with the new public key and a proof of
+possession. The execution layer forwards the request without verifying it; the
+consensus layer performs every check and, at the end of the block, emits two
+validator updates: the old key at zero power and the new key at the validator's
+power. A rejected rotation is logged rather than halting the block.
 
-Consensus keys lose nothing structurally in that move, because CometBFT never
-aggregated them: a commit is an array of one signature per validator (section 6),
-so adopting ML-DSA-65 costs bytes in proportion to the validator set and nothing
-else. The work is a dependency upgrade and a block-parameter re-tune.
+Rotation is limited to one per retention period, 21 days on mainnet, and
+validators rotate individually, so the validator set may remain mixed
+indefinitely and no network-wide switch is required. The keys are dual rather
+than hybrid: the secp256k1 key is retained as the validator's account key and
+does not co-sign consensus messages.
 
-The chain does not appear to use IBC, so the light-client hazard that
-dominates Cosmos post-quantum migration (enabling a key type counterparties
-cannot verify stops packet flow and expires the client) appears not to apply.
-This should be confirmed against deployment reality rather than the dependency
-manifest alone.
+#### Activation
+
+Three gates activate the mechanism: a timestamp in the execution client, a fork
+height that admits the new key type, and a fork height from which the consensus
+layer accepts rotations. Each validator then rotates with a single transaction,
+for which there is no deadline. Because CometBFT applies a validator update two
+blocks after it is emitted, a rotation briefly exposes the validator to missed
+blocks, and operators schedule it within the margin before downtime jailing.
+
+#### Cost
+
+GOAT's measurements, for ML-DSA-65 against the secp256k1 keys it replaces:
+
+| | secp256k1 | ML-DSA-65 |
+| --- | ---: | ---: |
+| Verification, per signature | 173 µs | 23 µs |
+| Signing, per signature | 46 µs | 196 µs |
+| Commit signatures per block, 20 validators | 1.3 KB | 66 KB |
+| Validator public keys in state, 20 validators | 0.7 KB | 39 KB |
+
+Verification becomes faster, so the migration costs bandwidth and storage rather
+than computation. Because CometBFT does not aggregate commit signatures
+(section 6), the cost is linear in the number of validators: at 20 validators
+the commit signatures add about 585 GB per year, and at 100 about 3 TB. The
+configured block-size limit, about 6 MiB, accommodates the larger commit at the
+current validator count. Aggregation of post-quantum signatures, as in
+Ethereum's recursive-proof designs (section 5), is outside the design.
+
+#### Limits
+
+The design covers consensus keys only; accounts, the bridge and the Bitcoin-side
+scripts are separate surfaces (sections 8 to 11 and 13). One interaction remains
+to be settled: the effective evidence window, about four days at the current
+block time, is shorter than the 21-day retention period, and because the
+upstream staking module fixes a rotation's deadline at the time of rotation,
+extending the evidence window could leave misbehaviour under a rotated-out key
+unattributable. Finally, the chain does not appear to use IBC, so the
+light-client hazard of section 6 appears not to apply; this should be confirmed
+against deployment rather than the dependency manifest alone.
 
 ### 13. goat-geth: the divergence, measured
 
@@ -1072,7 +1105,7 @@ Applied to GOAT:
 | 0 | Inventory every signature and proof verification path; add tests asserting no fixed signature-length assumptions | Fixed-length checks are load-bearing and invisible until a 3309-byte signature arrives (section 15) |
 | 1 | Peg custody: write and enforce an exposure policy (rotate custody outputs, cap value per output, avoid long-lived connectors) | The Taproot output key is on chain from creation and is sufficient to spend, so no internal-key choice removes the exposure (section 11). Only the *window* is GOAT's to shrink; the fix is BIP-360 and Bitcoin's timeline |
 | 2 | **Stop verifying a pairing on Bitcoin**: move the bridge from Ziren's pairing-based wrap to its garbled-verifier route, and re-target the `bitvm-gc` garbling stack from the Groth16/BN254 verifier to the hash-based one. That route is measured as a garbled circuit (about 10^8 non-free gates); the script route is measured as well (on the order of two thousand disprove segments at 100-bit) | The hardest item here, and the one that ships last. `bitvm-gc` is Groth16-verifier-oriented by construction, so this is a rebuild rather than a wrapper swap, and BABE cuts against it by lowering the cost of *keeping* Groth16. The prover side already exists in Ziren's design, and section 10 finds the verifier feasible on both routes without a soft fork, so what remains is integration and a choice by cost |
-| 3 | Upgrade the Cosmos SDK to ≥ v0.55; opt into ML-DSA-65 consensus keys; rotate validators; re-tune block-size and gossip limits | No SDK fork exists, so this is a dependency upgrade rather than a rebase |
+| 3 | Consensus keys: upgrade CometBFT and the Cosmos SDK together; activate ML-DSA-65 at the fork heights; validators rotate individually through the rotation contract, one rotation per retention period; provision bandwidth and storage for the larger commits | GOAT's published design (section 12). No SDK fork exists, so this is a dependency upgrade rather than a rebase; mixed validator sets are supported indefinitely, so no network-wide switch is needed; verification becomes faster, so the cost is bandwidth and storage rather than computation |
 | 4 | Reduce `goat-geth`'s 377-commit lag; inventory callers of `0x06`–`0x08` and `0x0a`, and record for each whether it is **upgradeable** | The lag is the delivery channel for EIP-7885 and EIP-8151 when they land. The inventory's key column is upgradeability, not existence: an upgradeable verifier is tractable whatever upstream does, an immutable one has a deadline that cannot move |
 | — | Peg: minimise Bitcoin-side key exposure; keep custody policy migratable | Blocked on Bitcoin, which by BIP-360's own text has no PQ signature scheme |
 
@@ -1183,6 +1216,7 @@ script figure in section 10, which were re-measured rather than re-read.
 - SHRINCS Working Group, *SHRINCS: an efficient hash-based signature scheme for Bitcoin (first draft)*, bitcoin-dev, 2026-08-27 — <https://groups.google.com/g/bitcoindev/c/HbVboXIFiG8>, <https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md>
 - NIST, FIPS 205 (SLH-DSA) — the standardised SPHINCS+ variant SHRINCS uses for its stateless path — <https://csrc.nist.gov/pubs/fips/205/final>
 - Bitcoin Optech, *Quantum resistance* — <https://bitcoinops.org/en/topics/quantum-resistance/>
+- GOAT Research, *Post-Quantum Consensus Keys on GOAT* — the consensus-key migration design of section 12 — <https://hackmd.io/MPLgpnyATaiFfskWDXumRQ>
 - Cosmos SDK, `UPGRADING.md` — <https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md>
 - Cosmos SDK PR #26436, ML-DSA-65 consensus keys — <https://github.com/cosmos/cosmos-sdk/pull/26436>
 - Cosmos docs, *Post-quantum keys* — <https://docs.cosmos.network/sdk/latest/keys/post-quantum-keys>
