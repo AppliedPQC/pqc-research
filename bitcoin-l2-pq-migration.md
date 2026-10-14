@@ -464,43 +464,32 @@ the more severe exposure.
 
 ## 10. Recurring pitfalls
 
-- **Symmetric layers protect only what they carry.** Garbled circuits, hash
-  commitments and MPC layers survive Shor, but a composition is only as secure as
-  the statement it garbles or commits to. The symmetric layer's own parameter
-  needs checking separately: 128-bit labels sit at the floor of the approved
-  post-quantum range.
-- **Read the security theorem, not the list of primitives.** A scheme built from
-  witness encryption, garbled circuits, hashlocks and Lamport commitments can
-  still reduce to discrete logarithms, because the pairing survives in the
-  relation encrypted against. When a design claims to remove an on-chain
-  verifier, the question is what its ciphertext is keyed to.
-- **The wrapper pattern runs in both directions.** It appears in existing
-  designs, a hash-based commitment carrying a curve assertion, and it is as easily
-  introduced during a migration, by proving inside a post-quantum system that a
-  broken primitive verified. A migration step helps only if it changes what is
-  asserted, not merely what attests to it.
-- **A component's orientation is a structural property.** A garbling or proving
-  stack built for one verifier makes the proof system part of its structure;
-  replacing it is a rebuild, and a dependency graph does not show this.
-- **Introducing a scheme is not retiring the old one.** An account with a
-  post-quantum key, or a chain with a post-quantum key type, remains exposed
-  through every path the old key still authorises.
-- **Fixed-length signature checks.** Code that validates a 64-byte signature
-  cannot accept a 3,309-byte one; such checks are small, load-bearing and
-  invisible until something fails.
-- **Size lands on the hot path.** Post-quantum signatures are one to two orders of
-  magnitude larger; on a consensus layer every validator signs every block, so
-  block, gossip and commit budgets need re-tuning together with the key type.
-- **Forked dependencies defer upstream work.** An L2 on forked dependencies must
-  catch up with upstream before it can inherit upstream post-quantum work, and
-  the size of that gap often sets the schedule more than the cryptography does.
-- **Prefer exposing a primitive to standardising a scheme.** A precompile bound to
-  one construction becomes unremovable once contracts depend on it; exposing the
-  shared operation, as EIP-7885 does with the number-theoretic transform, keeps
-  the choice of scheme in upgradeable code.
-- **Interoperability makes migration a coordination problem.** Where light
-  clients verify a counterparty's signatures with their own cryptography, enabling
-  a new key type before counterparties can verify it breaks connectivity silently.
+- **Assertions carried by post-quantum layers.** Garbled circuits, hash
+  commitments, witness encryption and hashlocks survive Shor, but a construction
+  built from them is only as secure as the statement it carries. Where that
+  statement is a pairing equation, the security theorem retains a
+  discrete-logarithm term whatever the primitives (section 6.3).
+- **Wrapping introduced during migration.** Proving inside a post-quantum system
+  that a classical primitive verified leaves the classical assertion in place. A
+  migration step helps only if it changes what is asserted.
+- **Parameters of the symmetric layer.** 128-bit garbling labels sit at the floor
+  of the approved post-quantum range, and warrant an explicit decision where the
+  garbling gates the release of value.
+- **Components built around one verifier.** A garbling or proving stack built for
+  one verifier makes the proof system part of its structure, so replacing the
+  proof system is a rebuild of that component.
+- **Introduction without retirement.** An account with a post-quantum key, or a
+  chain with a post-quantum key type, remains exposed through every path the old
+  key still authorises (section 3).
+- **Size assumptions.** Fixed-length signature checks reject post-quantum
+  signatures, and block, gossip and commit budgets must be re-tuned with the key
+  type, since every validator signs every block.
+- **Forked dependencies.** An L2 on forked dependencies must catch up with
+  upstream before it can inherit upstream post-quantum work, and that gap often
+  sets the schedule more than the cryptography does.
+- **Interoperating light clients.** Where light clients verify a counterparty's
+  signatures with their own cryptography, enabling a new key type before
+  counterparties can verify it breaks connectivity (section 4.3).
 
 ## 11. Conclusion
 
