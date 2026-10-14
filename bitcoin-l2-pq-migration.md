@@ -44,7 +44,7 @@ surface of the GOAT stack, where each stage stands and which party gates it.
 | Phase | Surface | Identify dependencies | Introduce and test | Move users and data | Retire old paths | Gated by |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | All surfaces | Inventory of signature and proof paths, including fixed-length checks (section 15) | — | — | — | GOAT |
-| 1 | Peg custody (rows 1–2) | Taproot key path, exposed from output creation (section 11) | No post-quantum signature exists on Bitcoin | Bound exposure: rotate custody outputs, cap value per output, shorten connector lifetimes | P2MR (BIP-360) and a post-quantum signature BIP; legacy sunset (BIP-361) | **Bitcoin** |
+| 1 | Peg custody (rows 1–2) | Taproot output keys, on chain from output creation (section 11) | No post-quantum signature exists on Bitcoin | Bound exposure: rotate custody outputs, cap value per output, shorten connector lifetimes | P2MR (BIP-360) and a post-quantum signature BIP; legacy sunset (BIP-361) | **Bitcoin** |
 | 2 | Bridge proof system (row 3) | Groth16 wrap, garbled Groth16 verifier, BABE relation (sections 8 and 9) | Ziren's garbled-verifier route; hash-based garbled verifier measured (section 10) | Move the dispute path to the hash-based verifier and rebuild `bitvm-gc` around it | Disable the pairing-based dispute path; not yet designed | **GOAT**, with ZKM |
 | 3 | Consensus keys (row 5) | secp256k1 validator keys (section 12) | ML-DSA-65 key type, through a CometBFT and Cosmos SDK upgrade at a fork height; design published | Per-validator rotation, one per retention period, with mixed sets allowed | Disallowing new secp256k1 consensus keys is not in the published design; history signed before activation remains forgeable | **GOAT** |
 | 4 | Execution accounts (row 6) | Public keys revealed by use; signature authority accepted by contracts (sections 5 and 13) | Upstream: frame transactions and verification precompiles | Each holder migrates its own account | Two revocations: transaction origination and `ecrecover` authority (section 5) | **Ethereum**, delivered by closing `goat-geth`'s lag |
@@ -433,7 +433,7 @@ that the case study and the framework can be read against each other.
 | Row | Surface | Repo | Scheme | Quantum status | Owner of the fix |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Bitcoin L1 outputs | — | secp256k1 / Schnorr | broken by Shor | **Bitcoin, not GOAT** |
-| 1–2 | Peg custody | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | MuSig2 over a **Taproot key path** | broken by Shor, **and exposed from output creation** | **GOAT** |
+| 1–2 | Peg custody | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | MuSig2 in **Taproot** script paths | broken by Shor, **and exposed from output creation** | **GOAT** |
 | 3 | Bridge proof system | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) | [Ziren](https://github.com/ProjectZKM/Ziren) STARK → **Groth16/BN254** wrap → garbled verifier | broken at the wrap and at the verifiers built on it | **GOAT** |
 | 4 | Bridge bit commitments | [`bitvm2-node`](https://github.com/GOATNetwork/bitvm2-node) → [BitVM](https://github.com/GOATNetwork/BitVM) | **Winternitz OTS** | **already PQ-safe** | — |
 | 5 | Consensus keys | [`goat`](https://github.com/GOATNetwork/goat) (CometBFT) | **secp256k1**, with rotation to ML-DSA-65 designed | broken by Shor until rotated | **GOAT** |
@@ -652,7 +652,7 @@ restores category-5 margin at roughly twice the garbling cost.
 The rest of `bitvm-gc` is unchanged in character: the circuit being garbled
 remains the Groth16/BN254 verifier, with symmetric primitives appearing only
 in the garbling machinery, and the bridge node still authorises peg-outs with
-MuSig2 over Taproot, so the key-path exposure of section 11 is untouched by
+MuSig2 in Taproot scripts, so the output-key exposure of section 11 is untouched by
 any of this.
 
 #### Non-transferability to a STARK verifier
@@ -855,54 +855,41 @@ KoalaBear costs about 120 Blake3 compressions, so a verifier for proofs
 committed with Poseidon2 is better wrapped into a binary-field proof than
 garbled directly, which is the order of Ziren's route.
 
-### 11. Peg custody and the Taproot key path
+### 11. Peg custody and Taproot outputs
 
-The peg custody model is direct: the committee aggregates MuSig2 partial
-signatures into a Taproot signature over an n-of-n aggregated Taproot public
-key, used by the BitVM2 connector outputs. MuSig2 producing a Taproot
-signature over an aggregate key is the canonical key-path spend pattern; a
-script-path spend would not need aggregation. Script paths are present as
-well, so the design uses both.
+The bridge spends its outputs only through Taproot script paths. The committee
+aggregates MuSig2 partial signatures into a signature that a leaf script checks,
+and every spend carries the leaf script and its control block; the protocol never
+signs a key-path spend. Each connector output is nevertheless a Taproot output,
+whose internal key is a real key: the committee's n-of-n aggregate key for most
+connectors, and an operator's or watchtower's key for the others.
 
-This is the sharpest exposure in the stack. A Taproot output commits its
-output key in the `scriptPubKey` at the moment the output is *created*, not when
-it is spent. So the peg's aggregated public key is on chain, in the clear, for
-the entire lifetime of the UTXO. An adversary with a cryptographically relevant
-quantum computer recovers the corresponding secret from that public key and
-spends via the key path, without forging a proof, compromising any
-committee member, or waiting for a spend to reveal anything. It is
-strictly easier than attacking the Groth16 wrapper, and it is the textbook
-long-exposure case that BIP-360 exists to remove.
+The exposure lies in the output type rather than in the spending pattern. A
+Taproot output commits its output key `Q` in the `scriptPubKey` when the output is
+*created*, and consensus accepts a key-path spend, a Schnorr signature valid for
+`Q`, for every Taproot output, whether or not the protocol that created it ever
+uses that path. An adversary with a cryptographically relevant quantum computer
+computes the secret for `Q` from the chain and spends through the key path,
+without forging a proof, compromising a committee member or waiting for a spend
+to reveal anything. The exposure lasts for the lifetime of each output, and it is
+the long-exposure case that BIP-360 exists to remove.
 
-One apparent mitigation is ineffective, and the reason generalises. A natural
-move is to commit a provably unspendable NUMS point as the Taproot internal key,
-disabling the key path and leaving only script paths, the construction BIP-360
-proposes to standardise. Against a quantum adversary it buys nothing. A Taproot
-key-path spend is validated by checking a Schnorr signature against the output
-key `Q` in the `scriptPubKey`; consensus never examines the internal key, the
-tweak, or how `Q` was constructed. An adversary who can solve discrete log
-computes the secret for `Q` from what is already on chain and signs. NUMS stops
-*classical* parties who do not know a discrete log: the committee, not
-the attacker.
+The choice of internal key does not change this. An unspendable NUMS point as the
+internal key, the construction BIP-360 proposes to standardise, prevents key-path
+spends by parties who cannot compute discrete logarithms. Consensus checks the
+signature against `Q` alone and never examines the internal key, the tweak or how
+`Q` was constructed, so an adversary who can compute discrete logarithms signs for
+`Q` in either case. BIP-360 is accordingly a consensus soft fork rather than a
+wallet convention: it defines an output type that commits no curve point at all,
+and only that removes the key path. BitVM2 requires script paths, so a
+hash-committed output type without them is not available to it, and BIP-360 is on
+Bitcoin's timeline rather than the L2's.
 
-That is exactly why BIP-360 is a *consensus* soft fork rather than a wallet
-convention: it defines an output type in which no curve point is committed at
-all. The removal of the key path is the protection, and it cannot be obtained by
-choosing a different internal key.
-
-The stronger statement is structural. Any Taproot output is inherently
-long-exposure, because `Q` is committed when the output is created and `Q` alone
-is sufficient to spend it. No key choice changes that. What would change it is a
-hash-committed output type (which BitVM2 cannot use, because it needs script
-paths) or BIP-360, which is Bitcoin's timeline and not the L2's.
-
-What is available unilaterally is bounding the window, not closing it. The
-exposure is proportional to how long value sits in a Taproot UTXO, so peg
-policy (rotating custody outputs on a schedule, capping the value in any one
-output, avoiding long-lived connector outputs) reduces the attack surface
-without waiting on anyone. Such policy is advisable and should be recorded
-explicitly, but it should be ranked as risk-bounding rather than as a fix, and
-it does not displace the proof-system work.
+What the L2 can do unilaterally is bound the window. The exposure grows with the
+time value remains in Taproot outputs, so peg policy (rotating custody outputs on
+a schedule, capping the value in any one output, and shortening the lifetime of
+connector outputs) reduces it without waiting on Bitcoin. Such policy bounds the
+risk rather than removing it, and it does not displace the proof-system work.
 
 ### 12. goat: consensus keys
 
