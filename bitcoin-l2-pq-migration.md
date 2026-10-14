@@ -97,8 +97,7 @@ EVM-compatible L2, determines rows 6 and 7.
 
 ## 3. A migration roadmap
 
-A cryptographic migration passes through four stages, as formulated in
-[StarkWare's network comparison](https://quantum.starkware.co/networks) after
+A cryptographic migration passes through four stages, as formulated in 
 [NIST CSWP 39](https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final):
 *identify dependencies*; *introduce and test* the replacement; *move users and
 data*; and *retire old paths*, disabling the vulnerable authorisation path so
@@ -146,15 +145,6 @@ secure than before, since an adversary uses the old path.
 | Post-quantum scheme chosen | none | hash-based, aggregated | ML-DSA-65 (FIPS 204) |
 | Furthest artifact | draft BIPs | prototypes | shipped, opt-in |
 | Governance | soft fork, rough consensus | coordinated upgrades | per-chain opt-in through genesis parameters |
-
-Progress inverts exposure: the chain with the sharpest exposure has specified no
-post-quantum signature, while the least discussed has one in shipped code. An
-independent comparison by StarkWare, which discloses that it develops one of the
-networks assessed, places Bitcoin and Ethereum in its higher-exposure group,
-Bitcoin with the stronger agility score but a migration ending in a mandatory
-interruption, and Ethereum with a weaker score and a scheduled interruption
-([StarkWare, *Networks*](https://quantum.starkware.co/networks)); Cosmos chains
-are not covered.
 
 ### 4.1 Bitcoin
 
@@ -548,7 +538,6 @@ details may change.
 **Migration framework**
 
 - NIST CSWP 39-upd1, *Considerations for Achieving Cryptographic Agility* — <https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final>
-- StarkWare, *Networks: Cryptographic Agility to PQ Migration* — <https://quantum.starkware.co/networks>
 
 **Bridge proof systems**
 
