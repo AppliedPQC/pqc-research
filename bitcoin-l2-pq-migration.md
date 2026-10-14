@@ -16,7 +16,7 @@ layers an L2 draws on, analyses the migration options for each surface, and
 examines one deployed L2, GOAT, as a case study. Four findings recur. Symmetric
 and hash-based layers protect only what they carry, so a bridge built from
 post-quantum primitives remains exposed when what it carries is an
-elliptic-curve assertion. Settlement and custody outputs depend on the base
+elliptic-curve assertion. Settlement and bridge outputs depend on the base
 layer's output types, so the L2 can only bound their exposure until the base
 layer acts. A bridge's pairing-based verifier can be replaced by a hash-based one
 under garbling but not under witness encryption, and the measured cost of such a
@@ -29,7 +29,7 @@ surface, and their migration costs bandwidth and storage rather than computation
 2. Surfaces and their owners
 3. A migration roadmap
 4. The base layers
-5. Settlement and custody outputs
+5. Settlement and bridge outputs
 6. The bridge proof system
 7. Consensus keys
 8. The execution layer
@@ -86,7 +86,7 @@ each.
 | # | Surface | Typical scheme | Broken by Shor? | Who can fix it |
 | --- | --- | --- | --- | --- |
 | 1 | L1 settlement outputs | secp256k1 / Schnorr | yes | **the base layer only** |
-| 2 | Bridge attestation and custody | secp256k1, Schnorr, MuSig2, BLS | yes | **the L2**, within the base layer's output types |
+| 2 | Bridge attestation and covenant keys | secp256k1, Schnorr, MuSig2, BLS | yes | **the L2**, within the base layer's output types |
 | 3 | Bridge proof system | Groth16, PLONK (pairing-based) or STARK (hash-based) | if pairing-based, including a pairing-based wrap of a STARK | **the L2**, with its proof-system provider |
 | 4 | Bridge data commitments | Merkle, Winternitz, Lamport | **no** (hash-based) | — |
 | 5 | L2 consensus keys | ed25519, secp256k1, BLS12-381 | yes | **the L2**, through its consensus stack |
@@ -97,7 +97,7 @@ each.
 whether Shor's algorithm, run on a cryptographically relevant quantum computer,
 recovers keys or forges proofs; the hash-based schemes of row 4 face only the
 quadratic speed-up of Grover's algorithm, which parameter choice absorbs. Row 2
-has two owners: the L2 chooses the signing scheme and the operator set, while the
+has two owners: the L2 chooses the signing scheme and the signer set, while the
 base layer fixes the output types that hold the value.
 
 Three parties hold the fixes. The base layer alone can change rows 1 and part of
@@ -130,7 +130,7 @@ that cannot be completed, the retirement of immutable precompile callers.
 | 3 | Consensus keys (row 5) | Validator key types | A post-quantum key type in the consensus stack | Per-validator key rotation | Disallow new classical consensus keys | the L2, with its consensus stack |
 | 4 | Execution accounts (row 6) | Accounts whose public keys are revealed; signature authority accepted by contracts | Post-quantum transactions and verification | Each holder migrates its own account | Revoke both the transaction and the `ecrecover` powers of the old key (section 8) | the execution ecosystem |
 | 4 | EVM precompiles (row 7) | Callers of pairing and KZG precompiles, and their upgradeability | Additive post-quantum precompiles | Upgradeable callers move | Immutable callers cannot be retired | the execution ecosystem |
-| 5 | Settlement and custody outputs (rows 1–2) | Outputs that commit a public key on chain | A post-quantum output type and signature | Move value into the new output type | Sunset of legacy spends | the base layer |
+| 5 | Settlement and bridge outputs (rows 1–2) | Outputs that commit a public key on chain | A post-quantum output type and signature | Move value into the new output type | Sunset of legacy spends | the base layer |
 
 *Notes.* Row references are to Table 1; row 4, the hash-based data commitments,
 needs no migration and is omitted. Order 0 is a precondition for every other row,
@@ -203,7 +203,7 @@ candidate, [SHRINCS](https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md
 posted as a draft in August 2026, is hash-based: a stateful signature from 548
 bytes with an SLH-DSA fallback of 5,777 bytes under one public key. It defines no
 output type, and it supports no multi-signature aggregation, which bears directly
-on bridge custody (section 5).
+on a bridge whose covenant is emulated by a multi-signature (section 5).
 
 ### 4.2 Ethereum
 
@@ -249,7 +249,7 @@ counterparties can verify it stops packet flow and eventually expires the
 client. Migration in an interoperable ecosystem is a coordination problem before
 it is a cryptographic one.
 
-## 5. Settlement and custody outputs
+## 5. Settlement and bridge outputs
 
 A bridge holds deposited value in base-layer outputs, and the post-quantum
 security of those outputs is set by the output types and signatures the base
@@ -258,14 +258,28 @@ bridge uses commit a public key on chain, and only a new output type, as BIP-360
 proposes, together with a post-quantum signature removes that exposure. Both are
 on the base layer's timeline.
 
+In a federated bridge these outputs are held in custody by a threshold of
+signers. A BitVM-style bridge holds no custody: Bitcoin has no covenant opcode, so
+the bridge emulates one. An N-of-N MuSig2 key of the signer set presigns the
+transaction graph that may spend a deposit, and each signer deletes its share, so
+that a single honest deletion confines the deposit to the presigned graph. The
+emulation rests on the deleted key being unrecoverable, which is the assumption a
+quantum adversary removes: the discrete logarithm of the aggregated public key is
+a key that signs any transaction, and the presigned graph then no longer
+constrains the deposit. A post-quantum emulation needs a post-quantum
+multi-signature to presign with, which SHRINCS does not provide, or a script that
+checks N individual post-quantum signatures, at a size linear in N. A native
+covenant opcode, such as `OP_CHECKTEMPLATEVERIFY`
+([BIP-119](https://github.com/bitcoin/bips/blob/master/bip-0119.mediawiki)),
+would enforce the graph without a signing key, and so without the exposure,
+wherever the graph can be expressed as templates. Each option is on the base
+layer's timeline.
+
 What an L2 can do unilaterally is bound the exposure. It grows with the time value
-remains in such outputs, so a custody policy that rotates outputs on a schedule,
-caps the value in any one output and shortens the lifetime of connector outputs
-reduces it without waiting on the base layer. Such a policy bounds the risk
-rather than removing it. Custody that rests on MuSig2 has a further dependency:
-its post-quantum replacement needs either a multi-signature construction for a
-post-quantum scheme, which SHRINCS does not provide, or a script that checks
-several individual signatures, at a corresponding cost in size.
+remains in such outputs, so a policy that rotates outputs on a schedule, caps the
+value in any one output and shortens the lifetime of connector outputs reduces it
+without waiting on the base layer. Such a policy bounds the risk rather than
+removing it.
 
 ## 6. The bridge proof system
 
@@ -533,7 +547,7 @@ of Table 2.
 | Row | Surface | Current scheme | Quantum status | Roadmap stage | Owner |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Settlement outputs | secp256k1 / Schnorr | broken | bounded only | Bitcoin |
-| 2 | Custody | MuSig2 | broken | bounded only | GOAT, within Bitcoin's output types |
+| 2 | Peg-in covenant | MuSig2 N-of-N, presigned | broken | bounded only | GOAT, within Bitcoin's output types |
 | 3 | Bridge proof system | Ziren STARK, Groth16/BN254 wrap, garbled verifier and witness encryption | broken at the wrap and the verifiers built on it | replacement introduced and measured | GOAT, with ZKM |
 | 4 | Bridge commitments | Winternitz one-time signatures | post-quantum | — | — |
 | 5 | Consensus keys | secp256k1 | broken until rotated | design published | GOAT |
@@ -543,7 +557,7 @@ of Table 2.
 *Notes.* Row numbers follow Table 1. "Broken" is conditional on a
 cryptographically relevant quantum computer. "Roadmap stage" is the furthest step
 of Table 2 reached as of October 2026. "Bounded only" means that no replacement
-exists yet and exposure is limited by custody policy (section 5).
+exists yet and exposure is limited by the output policy of section 5.
 
 Three observations follow. The bridge's Bitcoin-side plumbing is already
 post-quantum while its cryptographic content is not, which reframes the work on
