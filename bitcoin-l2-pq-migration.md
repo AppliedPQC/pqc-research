@@ -77,8 +77,11 @@ structural reasoning supported by a single case rather than on a survey.
 ## 2. Surfaces and their owners
 
 A Bitcoin L2 that settles to L1 and runs its own consensus has at least the
-following cryptographic surfaces. The taxonomy makes the ownership question
-explicit before the question of which scheme to adopt.
+following cryptographic surfaces, listed in Table 1. The taxonomy makes the
+ownership question explicit before the question of which scheme to adopt.
+
+**Table 1.** Cryptographic surfaces of a Bitcoin L2 and the party that can fix
+each.
 
 | # | Surface | Typical scheme | Broken by Shor? | Who can fix it |
 | --- | --- | --- | --- | --- |
@@ -89,6 +92,13 @@ explicit before the question of which scheme to adopt.
 | 5 | L2 consensus keys | ed25519, secp256k1, BLS12-381 | yes | **the L2**, through its consensus stack |
 | 6 | L2 execution accounts | secp256k1 ECDSA | yes | **the L2**, following its execution ecosystem |
 | 7 | EVM cryptographic precompiles | ecrecover, BN254 pairing, BLS12-381, KZG | yes | **upstream**, and not at all for immutable callers |
+
+*Notes.* Row numbers are used throughout the paper. "Broken by Shor?" asks
+whether Shor's algorithm, run on a cryptographically relevant quantum computer,
+recovers keys or forges proofs; the hash-based schemes of row 4 face only the
+quadratic speed-up of Grover's algorithm, which parameter choice absorbs. Row 2
+has two owners: the L2 chooses the signing scheme and the operator set, while the
+base layer fixes the output types that hold the value.
 
 Three parties hold the fixes. The base layer alone can change rows 1 and part of
 row 2; the L2 controls rows 2, 3 and 5; the execution ecosystem, Ethereum for an
@@ -101,7 +111,16 @@ A cryptographic migration passes through four stages, as formulated in
 *identify dependencies*; *introduce and test* the replacement; *move users and
 data*; and *retire old paths*, disabling the vulnerable authorisation path so
 that it cannot be forced back into use. The roadmap applies the four stages to
-each surface of section 2.
+each surface of Table 1. Figure 1 gives its shape, and Table 2 states each step.
+
+[![The migration roadmap: six surfaces in order against the four NIST CSWP 39 stages, coloured by the party that gates each row](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/bitcoin-l2-pq-migration/roadmap.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/bitcoin-l2-pq-migration/roadmap.png)
+
+**Figure 1.** The migration roadmap. Rows are surfaces in migration order and
+columns are the four stages; the fill marks the party that gates the row. Dashed
+cells await a party other than the L2, and the hatched cell marks the one step
+that cannot be completed, the retirement of immutable precompile callers.
+
+**Table 2.** The four migration stages applied to each surface.
 
 | Order | Surface | Identify dependencies | Introduce and test | Move users and data | Retire old paths | Gated by |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -112,6 +131,13 @@ each surface of section 2.
 | 4 | Execution accounts (row 6) | Accounts whose public keys are revealed; signature authority accepted by contracts | Post-quantum transactions and verification | Each holder migrates its own account | Revoke both the transaction and the `ecrecover` powers of the old key (section 8) | the execution ecosystem |
 | 4 | EVM precompiles (row 7) | Callers of pairing and KZG precompiles, and their upgradeability | Additive post-quantum precompiles | Upgradeable callers move | Immutable callers cannot be retired | the execution ecosystem |
 | 5 | Settlement and custody outputs (rows 1–2) | Outputs that commit a public key on chain | A post-quantum output type and signature | Move value into the new output type | Sunset of legacy spends | the base layer |
+
+*Notes.* Row references are to Table 1; row 4, the hash-based data commitments,
+needs no migration and is omitted. Order 0 is a precondition for every other row,
+and rows sharing an order number can proceed in parallel. A dash marks a stage
+that does not apply. "Gated by" names the party whose action the row waits on,
+which is not always the party that performs the work: the holders of execution
+accounts perform stage 3 themselves.
 
 The order follows ownership and severity rather than novelty.
 
@@ -144,6 +170,12 @@ at activation.
 
 ## 4. The base layers
 
+An L2 draws on up to three ecosystems: Bitcoin for settlement, Ethereum for
+execution and Cosmos for consensus. Table 3 compares their positions.
+
+**Table 3.** The post-quantum position of the three base layers, as of October
+2026.
+
 | | **Bitcoin** | **Ethereum** | **Cosmos** |
 | --- | --- | --- | --- |
 | Core problem | public-key exposure on an immutable ledger | signature size at validator scale | key-type negotiation across chains |
@@ -151,6 +183,13 @@ at activation.
 | Post-quantum scheme chosen | none | hash-based, aggregated | ML-DSA-65 (FIPS 204) |
 | Furthest artifact | draft BIPs | prototypes | shipped, opt-in |
 | Governance | soft fork, rough consensus | coordinated upgrades | per-chain opt-in through genesis parameters |
+
+*Notes.* "Post-quantum scheme chosen" records a scheme adopted by the protocol, not
+a candidate: SHRINCS is a draft proposal for Bitcoin (section 4.1), and Ethereum's
+hash-based direction rests on prototypes (section 4.2). "Furthest artifact" is the
+most advanced stage reached, from specification through prototype to release.
+Cosmos's "shipped" means available in a Cosmos SDK release for chains that opt in;
+no chain is required to adopt it.
 
 ### 4.1 Bitcoin
 
@@ -189,13 +228,20 @@ permitted key types, together with validator key rotation, so an existing chain
 can move its validators without a new genesis. Public keys grow from 32 to 1,952
 bytes and signatures from 64 to 3,309. CometBFT does not aggregate commit
 signatures: a commit carries one signature per voting validator, so its size is
-linear in the validator set.
+linear in the validator set (Table 4).
+
+**Table 4.** Signature bytes in one CometBFT commit, by validator count and key
+type.
 
 | Validators | ed25519 | ML-DSA-65 |
 | --- | ---: | ---: |
 | 50 | 3.2 KB | 165 KB |
 | 100 | 6.4 KB | 331 KB |
 | 150 | 9.6 KB | 496 KB |
+
+*Notes.* Computed from signature sizes of 64 bytes for ed25519 and 3,309 bytes for
+ML-DSA-65, assuming that every validator votes; 1 KB is 1,000 bytes. Vote
+metadata, which is the same under both key types, is excluded.
 
 One hazard generalises beyond Cosmos: an IBC light client verifies a counterparty's commit
 signatures with its own compiled-in cryptography, so enabling a key type before
@@ -247,7 +293,9 @@ The designs that bring a SNARK verifier to Bitcoin form one line of work. Each
 answers the question *how is a Bitcoin script convinced that a Groth16 proof
 verified*, and each moves more of the pairing arithmetic off chain. What varies
 across generations is the execution of verification; the relation verified is
-invariant.
+invariant (Table 5).
+
+**Table 5.** Generations of the Groth16 verifier on Bitcoin.
 
 | Generation | Mechanism | Cost addressed | Relation asserted |
 | --- | --- | --- | --- |
@@ -255,6 +303,12 @@ invariant.
 | [BitVM3](https://eprint.iacr.org/2026/933) | verifier circuit garbled; the dispute evaluates the garbling | on-chain cost collapses, but a garbled circuit is **42 GiB** | Groth16 / BN254 |
 | [BABE](https://eprint.iacr.org/2026/065) | witness encryption for linear pairing relations, with a garbled scalar multiplication for the non-linear part | off-chain storage and setup, **~1000× lower** than BitVM3 | Groth16 / BN254 |
 | [Deferred Binding](https://hackmd.io/@goatresearch/HkKp2g1Zfl) | BABE extended so that part of the public input may be fixed after garbling | usable when L2 state is known only at withdrawal | Groth16 / BN254 |
+
+*Notes.* Costs are those reported for each design and are not measured on a
+common workload. The BitVM2 and BitVM3 figures are as quoted by the BABE authors,
+and the BABE figure is their reduction relative to BitVM3. The last column is
+constant across the generations, so none of them changes the quantum exposure of
+row 3 of Table 1.
 
 [BABE](https://eprint.iacr.org/2026/065) (Garg, Kolonelos, Sergeevitch, Sridhar
 and Tse) keeps BitVM3's on-chain savings and "reduces its off-chain storage and
@@ -378,7 +432,10 @@ mixed indefinitely, and the classical key is retained as an account key rather
 than combined with the new one in a hybrid signature. Activation is gated by fork
 heights, and each validator then rotates at a time of its choosing.
 
-The measured costs reverse a common expectation:
+The measured costs, in Table 6, reverse a common expectation.
+
+**Table 6.** Cost of moving the case-study L2's consensus keys from secp256k1 to
+ML-DSA-65.
 
 | | secp256k1 | ML-DSA-65 |
 | --- | ---: | ---: |
@@ -386,6 +443,11 @@ The measured costs reverse a common expectation:
 | Signing, per signature | 46 µs | 196 µs |
 | Commit signatures per block, 20 validators | 1.3 KB | 66 KB |
 | Validator public keys in state, 20 validators | 0.7 KB | 39 KB |
+
+*Notes.* Measurements as reported in the published design. Timings depend on
+implementation and hardware and are comparable within a row only. Sizes count
+signature and key bytes alone; an ML-DSA-65 public key is 1,952 bytes and a
+signature 3,309 bytes.
 
 Verification becomes faster, so the migration costs bandwidth and storage rather
 than computation, linearly in the validator count: at 20 validators the commit
@@ -433,13 +495,20 @@ precompiles: secp256k1 recovery, BN254 addition, multiplication and pairing,
 BLS12-381 operations, KZG point evaluation and secp256r1 verification. A
 precompile cannot be migrated by its users, since it is a consensus rule and its
 callers are often immutable. What decides whether an exposure can be migrated is
-the caller set rather than the precompile.
+the caller set rather than the precompile (Table 7).
+
+**Table 7.** Migratability of the EVM's elliptic-curve and pairing precompiles,
+determined by their caller sets.
 
 | Precompile | Caller set | Migratable |
 | --- | --- | --- |
 | `ecrecover` | every account, gated by per-account state | yes: narrow it, as EIP-8151 does |
 | KZG point evaluation | rollup contracts: bounded, known and maintained | plausibly: coordinate the set |
 | BN254 and BLS12-381 pairing | every SNARK verifier deployed: unbounded and largely unmaintained | no |
+
+*Notes.* A precompile is migratable if its exposure can be removed without
+breaking a caller that cannot be changed. The rows are representative: the BN254
+and BLS12-381 group operations share the caller set of the pairing row.
 
 A precompile bound to an account identity can be narrowed conditionally on that
 account's state; a stateless mathematical precompile cannot, since there is no
@@ -456,7 +525,10 @@ from both directions and should be tracked as one dependency.
 
 GOAT is a Bitcoin L2 with a CometBFT and Cosmos SDK consensus layer, an EVM
 execution layer, and a BitVM2-style bridge whose dispute protocol is moving to
-garbled verification. Its surfaces map onto the taxonomy as follows.
+garbled verification. Table 8 maps its surfaces onto the taxonomy.
+
+**Table 8.** The surfaces of GOAT against the taxonomy of Table 1 and the roadmap
+of Table 2.
 
 | Row | Surface | Current scheme | Quantum status | Roadmap stage | Owner |
 | --- | --- | --- | --- | --- | --- |
@@ -467,6 +539,11 @@ garbled verification. Its surfaces map onto the taxonomy as follows.
 | 5 | Consensus keys | secp256k1 | broken until rotated | design published | GOAT |
 | 6 | Execution accounts | secp256k1 ECDSA | broken | follows Ethereum | Ethereum, inherited |
 | 7 | EVM precompiles | upstream set | broken for pairing and curve precompiles | inventory | Ethereum, inherited |
+
+*Notes.* Row numbers follow Table 1. "Broken" is conditional on a
+cryptographically relevant quantum computer. "Roadmap stage" is the furthest step
+of Table 2 reached as of October 2026. "Bounded only" means that no replacement
+exists yet and exposure is limited by custody policy (section 5).
 
 Three observations follow. The bridge's Bitcoin-side plumbing is already
 post-quantum while its cryptographic content is not, which reframes the work on
