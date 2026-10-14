@@ -34,8 +34,7 @@ surface, and their migration costs bandwidth and storage rather than computation
 7. Consensus keys
 8. The execution layer
 9. Case study: GOAT
-10. Recurring pitfalls
-11. Conclusion
+10. Conclusion
 
 ---
 
@@ -65,8 +64,8 @@ recognising that the L2 can schedule only part of the work. The contributions of
 this paper are a taxonomy of the surfaces and their owners (section 2); a roadmap
 placing each surface against the four stages of a migration (section 3); a review
 of the base layers (section 4); an analysis of the options for each surface
-(sections 5 to 8); a case study of one deployed L2 (section 9); and the pitfalls
-that recur across them (section 10).
+(sections 5 to 8), each with the pitfalls specific to it; and a case study of one
+deployed L2 (section 9).
 
 **Method.** The analysis is drawn from primary sources: BIP and EIP texts, the
 Cosmos SDK and CometBFT release notes, the design documents and security analyses
@@ -134,7 +133,14 @@ The order follows ownership and severity rather than novelty.
 
 The fourth stage is the one most often omitted. A surface on which a new
 algorithm has been introduced but the old path has not been retired is no more
-secure than before, since an adversary uses the old path.
+secure than before, since an adversary uses the old path: an account that adds a
+post-quantum key still answers to its ECDSA key until both of that key's powers
+are revoked (section 8.1), and a chain that admits ML-DSA-65 consensus keys still
+accepts secp256k1 ones until they are disallowed (section 7). The inventory of
+stage 0 should also include fixed-length signature checks: code that validates a
+64-byte signature rejects a 3,309-byte ML-DSA-65 signature, and such checks sit in
+transaction decoding, gossip limits and commit validation, where they surface only
+at activation.
 
 ## 4. The base layers
 
@@ -227,6 +233,13 @@ wrap: the STARK below it, and the Winternitz or Lamport commitments that carry
 values into script above it. Every layer between them asserts, or is keyed to,
 the BN254 pairing relation, and a forged pairing relation is a forged peg-out:
 the failure is one of soundness rather than of an individual key.
+
+The pattern is as easily introduced during a migration as inherited from an
+existing design. Wrapping a classical proof in a post-quantum one leaves the
+classical assertion in place: a STARK proving that a Groth16 proof verified, or a
+zkVM proving that an ECDSA signature verified, is forged as soon as the inner
+pairing or signature is. A migration step helps only if it changes what is
+asserted.
 
 ### 6.2 Generations of the on-chain verifier
 
@@ -337,9 +350,12 @@ and a narrow recursion reduce its proof to one whose verifier is a compact
 Boolean circuit ([Duan et al.](https://eprint.iacr.org/2026/2330)).
 
 Both routes are feasible without a soft fork. What remains is integration into
-the dispute protocol and a choice by cost, and, because the garbling stacks in
-use are organised around the Groth16 verifier, the integration is a rebuild of
-that component rather than the removal of a wrapper.
+the dispute protocol and a choice by cost. The integration is a rebuild rather
+than the removal of a wrapper, because the garbling stacks in use are organised
+around the Groth16 verifier: a garbled-circuit library whose gadgets implement
+BN254 field and pairing arithmetic offers nothing to a hash-based verifier, which
+needs binary-field multipliers and hash gadgets, so replacing the proof system
+replaces the circuit library.
 
 ## 7. Consensus keys
 
@@ -373,7 +389,8 @@ The measured costs reverse a common expectation:
 
 Verification becomes faster, so the migration costs bandwidth and storage rather
 than computation, linearly in the validator count: at 20 validators the commit
-signatures add about 585 GB per year, and at 100 about 3 TB. Aggregation of
+signatures add about 585 GB per year, and at 100 about 3 TB, so block, gossip and
+storage budgets must be re-tuned together with the key type. Aggregation of
 post-quantum consensus signatures, as in Ethereum's recursive designs, would
 remove the linear term, but no such mechanism exists in CometBFT, where two
 attempts to add BLS aggregation were closed without merging. Two points of a
@@ -404,9 +421,10 @@ transaction origination, whereas a delegation under
 such accounts, closing signature-based authorisation through immutable contracts
 such as ERC-20 `permit`. Until both revocations exist, abandoning the address is
 the only action that removes both powers. For an L2 the consequence is to follow
-Ethereum's account semantics rather than diverge ahead of them, and to keep its
-execution client close enough to upstream that the changes can be inherited when
-they ship.
+Ethereum's account semantics rather than diverge ahead of them. An execution
+client forked from upstream inherits changes such as EIP-8141 and EIP-8151 only
+after rebasing onto the release that ships them, so the fork's divergence sets the
+earliest date at which they can reach the L2.
 
 ### 8.2 Precompiles
 
@@ -462,47 +480,7 @@ migration design, are also the least costly, which makes them a natural first
 deployment of post-quantum cryptography in the stack even though the bridge is
 the more severe exposure.
 
-## 10. Recurring pitfalls
-
-- **Assertions carried by post-quantum layers.** A construction built from
-  post-quantum primitives is only as secure as the statement it carries. Partial
-  binding witness encryption uses garbled circuits, hashlocks and Lamport
-  commitments, yet its security bound contains `Adv_DLog[G1]` on BN254, because
-  the ciphertext is keyed to the Groth16 equation (section 6.3).
-- **Wrapping introduced during migration.** Wrapping a classical proof in a
-  post-quantum one leaves the classical assertion in place: a STARK proving that a
-  Groth16 proof verified, or a zkVM proving that an ECDSA signature verified, is
-  forged as soon as the inner pairing or signature is.
-- **Garbling label width.** 128-bit wire labels under an AES-128 PRF meet only NIST
-  post-quantum category 1. Where the garbling gates a payout secret, 256-bit labels
-  restore category-5 margin at about twice the garbling cost (section 6.3).
-- **Garbling libraries built for one verifier.** A garbled-circuit library whose
-  gadgets implement BN254 field and pairing arithmetic offers nothing to a
-  hash-based verifier, which needs binary-field multipliers and hash gadgets, so
-  replacing the proof system replaces the circuit library (section 6.4).
-- **Introduction without retirement.** A new key leaves the old one usable: an
-  EIP-7702 delegation keeps ECDSA transaction origination, and `ecrecover` still
-  accepts the old key in contracts until EIP-8151 (section 8.1); a chain that
-  admits ML-DSA-65 keys still accepts secp256k1 ones until they are disallowed
-  (section 7).
-- **Fixed-length signature checks.** Code that validates a 64-byte signature
-  rejects a 3,309-byte ML-DSA-65 signature, and such checks sit in transaction
-  decoding, gossip limits and commit validation, where they surface only at
-  activation.
-- **Commit size on the consensus path.** Every validator signs every block, so the
-  commit grows from 1.3 KB to 66 KB per block at 20 validators, about 585 GB a
-  year; block, gossip and storage budgets must be re-tuned together with the key
-  type (section 7).
-- **Forked execution clients.** An EVM client forked from upstream inherits
-  upstream's post-quantum changes, such as EIP-8141 and EIP-8151, only after
-  rebasing onto the release that ships them, so the fork's divergence sets the
-  earliest date at which those changes can reach the L2.
-- **Interoperating light clients.** An IBC light client verifies a counterparty's
-  commits with its own cryptography, so enabling ML-DSA-65 consensus keys before
-  counterparties can verify them halts packet flow and eventually expires the
-  client (section 4.3).
-
-## 11. Conclusion
+## 10. Conclusion
 
 A Bitcoin L2's post-quantum migration is a set of migrations owned by different
 parties. The L2 controls its bridge and its consensus keys and can carry both
