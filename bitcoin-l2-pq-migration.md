@@ -17,7 +17,7 @@ Bitcoin, with the sharpest exposure, has specified no post-quantum signature
 scheme at all, while Cosmos has one in shipped code. Part III reads one stack,
 GOAT, in depth as the evidence the framework was derived from. Part IV gives
 an ordering. Part V collects the recurring pitfalls and the remaining open
-items.
+items. The roadmap that follows the abstract summarises the whole upgrade.
 
 The finding of most practical consequence is that symmetric and hash-based
 layers protect only what they carry. In the stack examined, the Bitcoin-side
@@ -28,6 +28,36 @@ through four generations of the same component and finds it stated in the
 security proof of the newest one. Section 10 reports measured costs of
 hash-based replacement verifiers, both in Bitcoin script and as garbled
 circuits.
+
+### Roadmap
+
+The upgrade is organised in two dimensions. Each surface passes through the four
+stages of a cryptographic migration that
+[StarkWare's network comparison](https://quantum.starkware.co/networks) derives
+from [NIST CSWP 39](https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final):
+*identify dependencies*; *introduce and test* the replacement; *move users and
+data*; and *retire old paths*, so that the vulnerable authorisation path is
+disabled and cannot be forced back into use. The surfaces are taken in the order
+of section 14, which follows ownership and severity. The table states, for each
+surface of the GOAT stack, where each stage stands and which party gates it.
+
+| Phase | Surface | Identify dependencies | Introduce and test | Move users and data | Retire old paths | Gated by |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | All surfaces | Inventory of signature and proof paths, including fixed-length checks (section 15) | — | — | — | GOAT |
+| 1 | Peg custody (rows 1–2) | Taproot key path, exposed from output creation (section 11) | No post-quantum signature exists on Bitcoin | Bound exposure: rotate custody outputs, cap value per output, shorten connector lifetimes | P2MR (BIP-360) and a post-quantum signature BIP; legacy sunset (BIP-361) | **Bitcoin** |
+| 2 | Bridge proof system (row 3) | Groth16 wrap, garbled Groth16 verifier, BABE relation (sections 8 and 9) | Ziren's garbled-verifier route; hash-based garbled verifier measured (section 10) | Move the dispute path to the hash-based verifier and rebuild `bitvm-gc` around it | Disable the pairing-based dispute path; not yet designed | **GOAT**, with ZKM |
+| 3 | Consensus keys (row 5) | secp256k1 validator keys (section 12) | ML-DSA-65 key type, through a CometBFT and Cosmos SDK upgrade at a fork height; design published | Per-validator rotation, one per retention period, with mixed sets allowed | Disallowing new secp256k1 consensus keys is not in the published design; history signed before activation remains forgeable | **GOAT** |
+| 4 | Execution accounts (row 6) | Public keys revealed by use; signature authority accepted by contracts (sections 5 and 13) | Upstream: frame transactions and verification precompiles | Each holder migrates its own account | Two revocations: transaction origination and `ecrecover` authority (section 5) | **Ethereum**, delivered by closing `goat-geth`'s lag |
+| 4 | EVM precompiles (row 7) | Callers of the pairing and KZG precompiles, and whether each is upgradeable (section 13) | Upstream post-quantum precompiles, additive | Upgradeable callers move | Immutable callers cannot be retired | **Ethereum** |
+| — | Bridge data commitments (row 4) | Winternitz one-time signatures, hash-based (section 8) | — | — | — | — |
+
+No surface has reached the fourth stage. GOAT controls every stage of the
+consensus keys and of the bridge proof system, the latter with ZKM's prover; it
+can only bound exposure on the custody surfaces until Bitcoin acts, and it
+inherits the execution-layer stages from Ethereum. The final stage is the one
+most often omitted: a surface on which a new algorithm has been introduced but
+the old path has not been retired is no more secure than before, since an
+adversary uses the old path.
 
 ### Sources and verification
 
@@ -112,6 +142,14 @@ assumption.*
 | PQ scheme chosen | **none yet** | hash-based (XMSS/Winternitz family) | **ML-DSA-65 (FIPS 204)** |
 | Furthest artifact | Draft BIPs | working prototypes | **shipped, opt-in** |
 | Governance style | soft fork, rough consensus | coordinated upgrades | per-chain opt-in + genesis params |
+
+An independent comparison by StarkWare, which it discloses as the developer of
+one of the networks assessed, reaches compatible placements for the two chains
+it covers: Bitcoin and Ethereum both fall in its higher-exposure group, Bitcoin
+with the stronger agility score but a migration that ends in a mandatory
+interruption for accounts that do not act, Ethereum with a weaker score and a
+scheduled interruption ([StarkWare, *Networks*](https://quantum.starkware.co/networks)).
+Cosmos chains are not covered.
 
 ### 4. Bitcoin: an exposure problem, with the signature question deferred
 
@@ -289,9 +327,24 @@ same operator "is also of interest to speed-up STARK verifiers", so one
 precompile serves both scaling and the quantum transition. This introduces
 crypto-agility at the layer where it was previously absent.
 
+A cost analysis of these proposals
+([AppliedPQC, *Post-Quantum Migration in Ethereum's Execution Layer*](https://github.com/AppliedPQC/pqc-research/issues/35))
+adds two findings that bear on any EVM chain. First, the cost of a post-quantum
+transaction lies in its bytes rather than its verification: with a verification
+precompile, verification is a few percent of the transaction's gas, and the
+signature's size sets the rest, which favours the smallest schemes for
+transactions that carry their own signatures. Second, obtaining a post-quantum
+key does not complete a migration. The old key retains two independent powers,
+originating transactions from the address and authorising actions through
+`ecrecover` in contracts, and each requires its own revocation:
+[EIP-8298](https://eips.ethereum.org/EIPS/eip-8298) lets an account install code,
+after which [EIP-3607](https://eips.ethereum.org/EIPS/eip-3607) rejects its ECDSA
+transactions, and [EIP-8151](https://eips.ethereum.org/EIPS/eip-8151) restricts
+`ecrecover` for such accounts. Until both ship, abandoning the address is the
+only action that removes both powers.
+
 Nothing post-quantum has shipped to Ethereum mainnet on any of these fronts;
-EIP-7885, EIP-8141 and
-[EIP-8151](https://eips.ethereum.org/EIPS/eip-8151) are all Draft.
+EIP-7885, EIP-8141, EIP-8298 and EIP-8151 are all Draft.
 
 ### 6. Cosmos: key-type negotiation, with a shipped implementation
 
@@ -967,13 +1020,13 @@ Ethereum's own work shows the one lever that does exist, and it is narrower than
 Restricted ecRecover",
 Draft, created 2026-02-09) does not delete `ecRecover`; it *narrows* it, keyed on
 state the protocol already controls. The attack it closes is instructive: an EOA
-that migrates to post-quantum authorization via
-[EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) has its ECDSA
-*transaction* authority disabled by
-[EIP-3607](https://eips.ethereum.org/EIPS/eip-3607) (Final), but `ecRecover` ignores
-account state, so a quantum attacker holding the derived ECDSA key could still
-authorize transfers through immutable contracts, notably ERC-20 `permit`
-implementations. EIP-8151 makes `ecRecover` return zero when the account has
+that installs real code, as [EIP-8298](https://eips.ethereum.org/EIPS/eip-8298)
+allows, has its ECDSA *transaction* authority disabled by
+[EIP-3607](https://eips.ethereum.org/EIPS/eip-3607) (Final), though a delegation
+under [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) alone does not. But
+`ecRecover` ignores account state, so a quantum attacker holding the derived
+ECDSA key could still authorize transfers through immutable contracts, notably
+ERC-20 `permit` implementations. EIP-8151 makes `ecRecover` return zero when the account has
 non-empty code that is not a valid delegation indicator.
 
 The generalisable rule is therefore sharper than "precompiles are unmigratable":
@@ -1068,7 +1121,8 @@ account-semantics question, and it should not inherit that low priority.
 ### 14. Ordering the work
 
 Ownership and severity, not novelty, should set the
-order:
+order; the roadmap after the abstract places each step against the four
+migration stages:
 
 1. Bridge attestation keys (row 2). Highest value per unit of control. The
    operator set is the peg's trust root; compromising a threshold is
@@ -1215,6 +1269,10 @@ script figure in section 10, which were re-measured rather than re-read.
 - BIP-361, *Post Quantum Migration and Legacy Signature Sunset* — <https://github.com/bitcoin/bips/blob/master/bip-0361.mediawiki>
 - SHRINCS Working Group, *SHRINCS: an efficient hash-based signature scheme for Bitcoin (first draft)*, bitcoin-dev, 2026-08-27 — <https://groups.google.com/g/bitcoindev/c/HbVboXIFiG8>, <https://github.com/SHRINCS/shrincs-bip/blob/main/SHRINCS.md>
 - NIST, FIPS 205 (SLH-DSA) — the standardised SPHINCS+ variant SHRINCS uses for its stateless path — <https://csrc.nist.gov/pubs/fips/205/final>
+- NIST CSWP 39-upd1, *Considerations for Achieving Cryptographic Agility* — <https://csrc.nist.gov/pubs/cswp/39/upd1/considerations-for-achieving-crypto-agility/final>
+- StarkWare, *Networks: Cryptographic Agility to PQ Migration* (Quantum Hub) — the four migration stages and the network comparison — <https://quantum.starkware.co/networks>
+- AppliedPQC, *Post-Quantum Migration in Ethereum's Execution Layer: The Full Picture* — <https://github.com/AppliedPQC/pqc-research/issues/35>
+- EIP-8298, *SETCODEFROM Code Reuse Instruction* — <https://eips.ethereum.org/EIPS/eip-8298>
 - Bitcoin Optech, *Quantum resistance* — <https://bitcoinops.org/en/topics/quantum-resistance/>
 - GOAT Research, *Post-Quantum Consensus Keys on GOAT* — the consensus-key migration design of section 12 — <https://hackmd.io/MPLgpnyATaiFfskWDXumRQ>
 - Cosmos SDK, `UPGRADING.md` — <https://github.com/cosmos/cosmos-sdk/blob/main/UPGRADING.md>
