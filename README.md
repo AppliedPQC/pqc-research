@@ -11,6 +11,7 @@ and the resource list at [`AppliedPQC/awesome-pqc`](https://github.com/AppliedPQ
 | Report | Subject |
 | --- | --- |
 | [Post-quantum migration for Bitcoin layer 2s](bitcoin-l2-pq-migration.md) | Where an L2's quantum exposure sits, who owns each fix, and a read of the GOAT stack as the evidence it was derived from |
+| [Akita: what a lattice commitment buys a post-quantum zkVM](akita-lattice-pcs.md) | How LayerZero's lattice PCS breaks the square-root verifier, its own measurements against lattice and hash-based schemes and in Jolt, the move to NIST category 3, and what it does not yet provide |
 
 ## Method
 
