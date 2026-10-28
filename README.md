@@ -11,6 +11,7 @@ and the resource list at [`AppliedPQC/awesome-pqc`](https://github.com/AppliedPQ
 | Report | Subject |
 | --- | --- |
 | [Post-quantum migration for Bitcoin layer 2s](bitcoin-l2-pq-migration.md) | Where an L2's quantum exposure sits, who owns each fix, and a read of the GOAT stack as the evidence it was derived from |
+| [NIST IR 8547, from draft to final](nist-ir-8547-final.md) | What changed in NIST's transition schedule between the 2024 draft and the October 2026 final: deprecation at every key size, the EO 14412 and OMB M-26-15 deadlines, ML-KEM-768 as the default, and the room given to hybrids |
 
 ## Method
 
