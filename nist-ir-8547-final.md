@@ -14,9 +14,11 @@
 
 ## The short version
 
-The two dates are the same, 2030 and 2035, but the 2030 one now reaches much
-further: it deprecates every quantum-vulnerable public-key algorithm, not just the
-112-bit ones. Three things changed.
+The final keeps the draft's two milestones: quantum-vulnerable public-key
+algorithms are deprecated after 2030 and disallowed after 2035. What changed is how
+much the 2030 milestone covers. In the draft it deprecated only the 112-bit
+algorithms; in the final it deprecates all of them, at every key size. In all,
+three things changed.
 
 1. **Deprecation now covers every key size.** The draft deprecated only the
    112-bit level; the final deprecates RSA, ECDSA, EdDSA, finite-field and
