@@ -9,7 +9,7 @@
 > doi:10.6028/NIST.IR.8547). Draft:
 > <https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf>.
 >
-> Checked 28 October 2026 against both PDFs and against OMB M-26-15 itself. The
+> Checked 28 October 2026 against both PDFs and against [OMB M-26-15](https://www.whitehouse.gov/wp-content/uploads/2026/06/M-26-15-Execution-of-the-Migration-to-Post-Quantum-Cryptography.pdf) itself. The
 > final is 34 pages to the draft's 30.
 
 ## The short version
@@ -22,7 +22,8 @@ further: it deprecates every quantum-vulnerable public-key algorithm, not just t
    112-bit level; the final deprecates RSA, ECDSA, EdDSA, finite-field and
    elliptic-curve Diffie-Hellman and MQV at every size.
 2. **Federal deadlines arrive earlier.** The final is written around
-   Executive Order 14412 and OMB Memorandum M-26-15, both of June 2026. They put the
+   [Executive Order 14412](https://www.whitehouse.gov/presidential-actions/2026/06/securing-the-nation-against-advanced-cryptographic-attacks/) and
+   [OMB Memorandum M-26-15](https://www.whitehouse.gov/wp-content/uploads/2026/06/M-26-15-Execution-of-the-Migration-to-Post-Quantum-Cryptography.pdf), both of June 2026. They put the
    most sensitive federal systems on PQC key establishment by the end of 2030 and
    PQC signatures by the end of 2031. NIST's 2030–2035 window is relief for
    everything else.
