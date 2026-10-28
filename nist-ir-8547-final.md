@@ -14,8 +14,9 @@
 
 ## The short version
 
-The headline dates did not move: quantum-vulnerable public-key cryptography is
-deprecated after 2030 and disallowed after 2035. Three things did change.
+The two dates are the same, 2030 and 2035, but the 2030 one now reaches much
+further: it deprecates every quantum-vulnerable public-key algorithm, not just the
+112-bit ones. Three things changed.
 
 1. **Deprecation now covers every key size.** The draft deprecated only the
    112-bit level; the final deprecates RSA, ECDSA, EdDSA, finite-field and
