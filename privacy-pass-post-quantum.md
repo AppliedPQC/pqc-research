@@ -51,6 +51,8 @@ signature. Two properties matter:
 - **Unforgeability.** Only the issuer can make tokens. This rests on RSA, and Shor's
   algorithm breaks it.
 
+[![Privacy Pass today: the issuer, client and origin; unlinkability holds against a quantum computer, unforgeability falls to Shor's algorithm, and the post-quantum replacement swaps RSA for a UOV signature and unblinding for a zero-knowledge proof](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/privacy-pass.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/privacy-pass.png)
+
 The post also cites a recent classical result: researchers at UC San Diego and Inria
 forged a 1024-bit RSA signature by using a Privacy Pass issuer as a signing oracle
 (ePrint 2026/2131). Privacy Pass deployments use 2048-bit RSA, which the authors
@@ -98,6 +100,8 @@ invert `F` as above to get `u`, and output `s = T^(-1)(u)` with the salt.
 **Verifying.** Check `P(s) = Hash(message ‖ salt)`: evaluate `m` quadratic polynomials
 and compare.
 
+[![The oil-and-vinegar trapdoor: a secret polynomial's coefficient grid with the oil-times-oil block zero, the five signing steps, and the uov-Ip sizes](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/uov-trapdoor.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/uov-trapdoor.png)
+
 That shape explains UOV's sizes. The signature is just `n` field elements plus the
 salt, and the public key is every coefficient of `P`. For uov-Ip, that is
 45 × (119 × 120 / 2) = 321,300 bytes. The compressed variant, used here, derives most of the coefficients from a seed and stores the rest: 46,591
@@ -142,6 +146,8 @@ smaller keys.
 UOV, MAYO, QR-UOV and SNOVA are all in the third round of NIST's additional
 signatures ([NIST IR 8610](https://csrc.nist.gov/pubs/ir/8610/final), May 2026).
 
+[![Signature and public-key sizes on a log scale for ECDSA, RSA-2048, ML-DSA-44, SLH-DSA-128s, FAEST-EM-128s, MAYO_one and UOV, with UOV highlighted](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/sizes.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/sizes.png)
+
 ## 3. VOLE-in-the-head, the proof system
 
 ### VOLE as a commitment
@@ -185,6 +191,8 @@ satisfy polynomial constraints.
 A prover who cheats passes only if `Δ` is a root of a nonzero degree-`d` polynomial,
 which has probability at most `d / 2^λ`. For UOV, `d = 2`.
 
+[![A VOLE correlation as a commitment between prover and verifier, committing to the witness, and QuickSilver's check drawn as lines evaluated at the secret point Δ](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/vole-quicksilver.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/vole-quicksilver.png)
+
 ### Putting the verifier in the head
 
 A VOLE correlation normally needs an interactive protocol with the verifier.
@@ -209,9 +217,13 @@ for anyone to check.
    which is a valid VOLE without the missing seed, because the term for `i = j*`
    vanishes.
 
+[![A GGM tree of eight seeds with the path to hidden seed 5 in red and the three opened siblings in blue, the prover's u and v, and the verifier's q = j*·u − v](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-tree.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-tree.png)
+
 The order is essential: once the prover knows `Δ`, binding is gone. With Fiat–Shamir,
 every challenge is a hash of the transcript so far, and the proof becomes a
 non-interactive, publicly verifiable signature.
+
+[![The seven steps of a VOLE-in-the-head proof, alternating between the prover and Fiat–Shamir challenges, with Δ drawn last](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-flow.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-flow.png)
 
 A single tree gives `Δ` only `k` bits. VOLE-in-the-head therefore runs `τ` trees and
 joins them into one `λ`-bit key.
@@ -311,6 +323,8 @@ issuance stays under 1 KB. A further optimisation has the client mask the hash a
 the issuer find a UOV preimage directly, removing one hash from the proof; it changes
 the security assumption to *one-more-UOV*.
 
+[![PoMFRIT between client, issuer and verifier: the client commits c = H(m, r), the issuer signs c with UOV, and the client proves P(s) = H(m, r) in zero knowledge](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/pomfrit.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/pomfrit.png)
+
 **MOLE** (Moderation Of unLinkable Endorsements) is the protocol shape the other two
 schemes target, which the post links to Mozilla Hacks. An *anchor* issues an
 *endorsement*; a *moderator* accepts its redemption, where the client proves it holds
@@ -324,6 +338,8 @@ site. Credentials need not hide their issuer or be publicly verifiable.
 - **VOLE-ACT** is the credential candidate: an anonymous credit token whose balance
   the issuer updates on each spend without learning it. Proving that a balance lies
   in a range is cheap in VOLE-in-the-head. 5.4 KB to issue, 12.0 KB to spend.
+
+[![MOLE: anchors issue endorsements with VOLE-IHAT, the moderator accepts a redemption without learning which anchor and issues a VOLE-ACT credential, with a table of sizes for all three schemes](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/mole.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/mole.png)
 
 ## 6. The code
 
