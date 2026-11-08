@@ -8,9 +8,6 @@
 > FAEST, with an implementation. This note reads the post and the code.
 > Post: <https://blog.cloudflare.com/vole-mole/> (Bas Westerbaan).
 > Code: <https://github.com/cloudflareresearch/vole-mole>.
->
-> Checked 8 November 2026 against the post, the repository README, the papers it
-> cites, and the UOV Round 3 and FAEST v2 specifications.
 
 ## The short version
 
