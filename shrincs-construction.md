@@ -418,7 +418,7 @@ Three properties follow:
 ```math
 \begin{aligned}
 \text{FXMSS signature} &= \underbrace{2}_{\text{grind counter}} + \underbrace{512}_{32 \text{ chains} \times 16\,\text{B}} + 16 \times \text{depth} = 514 + 16 \times \text{depth} \\
-\text{SHRINCS stateful signature} &= \underbrace{1}_{\text{leaf height}} + \underbrace{16}_{R} + \underbrace{\lceil \min(\text{depth}, 64)/8 \rceil}_{\text{leaf index}} + \text{FXMSS signature}
+\text{SHRINCS stateful signature} &= \underbrace{1}_{\text{leaf}\ \text{height}} + \underbrace{16}_{R} + \underbrace{\lceil \min(\text{depth}, 64)/8 \rceil}_{\text{leaf index}} + \text{FXMSS signature}
 \end{aligned}
 ```
 
