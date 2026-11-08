@@ -63,45 +63,45 @@ key. Hiding that is what VOLE-IHAT adds.
 ### The hard problem
 
 UOV belongs to multivariate public-key cryptography. Its public key is a map
-`P: F_q^n → F_q^m` made of `m` quadratic polynomials in `n` variables,
+$`P\colon \mathbb{F}_q^n \to \mathbb{F}_q^m`$ made of $`m`$ quadratic polynomials in $`n`$ variables,
 
-```
-p_k(x_1, …, x_n) = Σ_{i ≤ j} a^(k)_{i,j} · x_i · x_j + Σ_i b^(k)_i · x_i + c^(k),   k = 1 … m
+```math
+p_k(x_1, \dots, x_n) = \sum_{i \le j} a^{(k)}_{ij}\, x_i x_j + \sum_{i} b^{(k)}_i\, x_i + c^{(k)}, \qquad k = 1, \dots, m
 ```
 
-Evaluating `P` takes only multiplications and additions. Inverting it, which means finding some
-`x` with `P(x) = t`, is the **MQ problem**. MQ is NP-complete over every finite field,
-and its hardest instances have `m` and `n` of the same order. Factoring and discrete
+Evaluating $`P`$ takes only multiplications and additions. Inverting it, which means finding some
+$`x`$ with $`P(x) = t`$, is the **MQ problem**. MQ is NP-complete over every finite field,
+and its hardest instances have $`m`$ and $`n`$ of the same order. Factoring and discrete
 logarithms play no part, which is why Shor's algorithm has nothing to attack.
 
 ### The trapdoor: oil and vinegar
 
-The signer knows a hidden structure that makes one particular `P` easy to invert. The
-variables are split into `v = n − m` *vinegar* variables and `m` *oil* variables, and
-each secret polynomial `f_k` is built with no oil-times-oil terms:
+The signer knows a hidden structure that makes one particular $`P`$ easy to invert. The
+variables are split into $`v = n - m`$ *vinegar* variables and $`m`$ *oil* variables, and
+each secret polynomial $`f_k`$ is built with no oil-times-oil terms:
 
-```
-f_k(x) = Σ_{i ≤ v, j ≥ i} α^(k)_{i,j} · x_i · x_j
+```math
+f_k(x) = \sum_{i \le v,\ j \ge i} \alpha^{(k)}_{ij}\, x_i x_j
 ```
 
-Fix the vinegar variables to random values and every `f_k` becomes *linear* in the
-oil variables. Inverting `F = (f_1, …, f_m)` then means solving `m` linear equations
-in `m` unknowns by Gaussian elimination. If the system happens to be singular, the
-signer draws new vinegar values. A random invertible linear map `T` hides the
-structure, and the public key is `P = F ∘ T`. In geometric terms, the secret is an
-`m`-dimensional *oil space* on which `P` vanishes, and every attack on UOV is an
+Fix the vinegar variables to random values and every $`f_k`$ becomes *linear* in the
+oil variables. Inverting $`F = (f_1, \dots, f_m)`$ then means solving $`m`$ linear equations
+in $`m`$ unknowns by Gaussian elimination. If the system happens to be singular, the
+signer draws new vinegar values. A random invertible linear map $`T`$ hides the
+structure, and the public key is $`P = F \circ T`$. In geometric terms, the secret is an
+$`m`$-dimensional *oil space* on which $`P`$ vanishes, and every attack on UOV is an
 attempt to find it.
 
-**Signing.** Hash the message with a fresh 16-byte salt to a target `t ∈ F_q^m`,
-invert `F` as above to get `u`, and output `s = T^(-1)(u)` with the salt.
-**Verifying.** Check `P(s) = Hash(message ‖ salt)`: evaluate `m` quadratic polynomials
+**Signing.** Hash the message with a fresh 16-byte salt to a target $`t \in \mathbb{F}_q^m`$,
+invert $`F`$ as above to get $`u`$, and output $`s = T^{-1}(u)`$ with the salt.
+**Verifying.** Check $`P(s) = \mathrm{Hash}(\text{message} \parallel \text{salt})`$: evaluate $`m`$ quadratic polynomials
 and compare.
 
 [![The oil-and-vinegar trapdoor: a secret polynomial's coefficient grid with the oil-times-oil block zero, the five signing steps, and the uov-Ip sizes](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/uov-trapdoor.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/uov-trapdoor.png)
 
-That shape explains UOV's sizes. The signature is just `n` field elements plus the
-salt, and the public key is every coefficient of `P`. For uov-Ip, that is
-45 × (119 × 120 / 2) = 321,300 bytes. The compressed variant, used here, derives most of the coefficients from a seed and stores the rest: 46,591
+That shape explains UOV's sizes. The signature is just $`n`$ field elements plus the
+salt, and the public key is every coefficient of $`P`$. For uov-Ip, that is
+$`45 \times (119 \times 120 / 2) = 321{,}300`$ bytes. The compressed variant, used here, derives most of the coefficients from a seed and stores the rest: 46,591
 bytes.
 
 | Round-3 parameter set | NIST level | (n, m, q) | Compressed public key | Signature |
@@ -120,17 +120,17 @@ keys come from.
 - **1998.** Kipnis and Shamir break that balanced version with an invariant-subspace
   attack that recovers the oil space.
 - **1999.** Kipnis, Patarin and Goubin publish *Unbalanced* Oil and Vinegar, with
-  `n > 2m`, which puts the oil space out of that attack's reach.
+  $`n > 2m`$, which puts the oil space out of that attack's reach.
 - **2022.** Beullens breaks Rainbow, a layered UOV variant and NIST round-3 finalist,
   in "a weekend on a laptop". The attack used Rainbow's extra layers, and plain UOV
   went on into NIST's additional-signatures process.
 - **2025–2026.** The wedge attack (Ran; generalised by Jin et al. and by Furue and
   Ikematsu) gives a new way to search for the oil space. UOV's Round 3 specification
-  (30 August 2026) raised its parameters in response, moving uov-Ip to `n = 119`,
-  `m = 45`.
+  (30 August 2026) raised its parameters in response, moving uov-Ip to $`n = 119`$,
+  $`m = 45`$.
 
 The Round 3 specification puts the cheapest known attack on uov-Ip, the wedge attack,
-at 2^144 bit operations, and the direct algebraic attack at 2^146.
+at $`2^{144}`$ bit operations, and the direct algebraic attack at $`2^{146}`$.
 
 ### Relatives
 
@@ -149,22 +149,22 @@ signatures ([NIST IR 8610](https://csrc.nist.gov/pubs/ir/8610/final), May 2026).
 
 ### VOLE as a commitment
 
-A *VOLE correlation* gives the prover random bits `u_i ∈ F_2` and field elements
-`v_i ∈ F_{2^λ}`, and gives the verifier a global key `Δ ∈ F_{2^λ}` and values
+A *VOLE correlation* gives the prover random bits $`u_i \in \mathbb{F}_2`$ and field elements
+$`v_i \in \mathbb{F}_{2^\lambda}`$, and gives the verifier a global key $`\Delta \in \mathbb{F}_{2^\lambda}`$ and values
 
-```
-q_i = u_i · Δ + v_i
+```math
+q_i = u_i \cdot \Delta + v_i
 ```
 
-This works as a commitment to the bits `u_i`:
-- **Hiding.** The random `v_i` hides `u_i` inside `q_i`.
-- **Binding.** Opening to a different bit would require the prover to guess `Δ`,
-  which succeeds with probability `2^(-λ)`.
+This works as a commitment to the bits $`u_i`$:
+- **Hiding.** The random $`v_i`$ hides $`u_i`$ inside $`q_i`$.
+- **Binding.** Opening to a different bit would require the prover to guess $`\Delta`$,
+  which succeeds with probability $`2^{-\lambda}`$.
 - **Linearly homomorphic.** Sums of commitments are commitments to the sums, so the
   verifier can add committed values without any interaction.
 
-To commit to a witness `w`, the prover sends `d = u + w`. The verifier updates its
-values to `q_i + d_i · Δ = v_i + w_i · Δ`, which is now a commitment to `w_i`.
+To commit to a witness $`w`$, the prover sends $`d = u + w`$. The verifier updates its
+values to $`q_i + d_i \cdot \Delta = v_i + w_i \cdot \Delta`$, which is now a commitment to $`w_i`$.
 
 ### Proving constraints: QuickSilver
 
@@ -172,21 +172,21 @@ QuickSilver (Yang, Sarkar, Weng and Wang, CCS 2021) proves that committed values
 satisfy polynomial constraints.
 
 1. **Each value is a line.** The prover sees each committed value as a degree-1
-   polynomial `ρ_i(X) = w_i · X + v_i`. The verifier holds its value at the secret
-   point, `q_i = ρ_i(Δ)`.
+   polynomial $`\rho_i(X) = w_i \cdot X + v_i`$. The verifier holds its value at the secret
+   point, $`q_i = \rho_i(\Delta)`$.
 2. **Products are polynomial products.** Multiplying two commitments multiplies the
    polynomials. The prover gets a degree-2 polynomial and the verifier the matching
-   point `q_i · q_j`.
+   point $`q_i \cdot q_j`$.
 3. **A satisfied constraint loses its top coefficient.** Evaluate a constraint
-   `f(w) = 0` of degree `d` this way. The top coefficient of the prover's polynomial
-   is `f(w)` itself, so if the constraint holds it is zero.
+   $`f(w) = 0`$ of degree $`d`$ this way. The top coefficient of the prover's polynomial
+   is $`f(w)`$ itself, so if the constraint holds it is zero.
 4. **One check for all constraints.** Every constraint is folded into one with a random
    linear combination. The prover sends the remaining coefficients, masked with spare
    random VOLEs so that they reveal nothing. The verifier checks that they evaluate at
-   `Δ` to what it computed itself.
+   $`\Delta`$ to what it computed itself.
 
-A prover who cheats passes only if `Δ` is a root of a nonzero degree-`d` polynomial,
-which has probability at most `d / 2^λ`. For UOV, `d = 2`.
+A prover who cheats passes only if $`\Delta`$ is a root of a nonzero degree-$`d`$ polynomial,
+which has probability at most $`d / 2^\lambda`$. For UOV, $`d = 2`$.
 
 [![A VOLE correlation as a commitment between prover and verifier, committing to the witness, and QuickSilver's check drawn as lines evaluated at the secret point Δ](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/vole-quicksilver.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/vole-quicksilver.png)
 
@@ -197,35 +197,35 @@ VOLE-in-the-head (Baum, Braun, Delpech de Saint Guilhem, Klooß, Orsini, Roy and
 Scholl, Crypto 2023) lets the prover make one alone, then reveal just enough later
 for anyone to check.
 
-1. **Commit to seeds.** The prover commits to `N = 2^k` seeds with an *all-but-one*
+1. **Commit to seeds.** The prover commits to $`N = 2^k`$ seeds with an *all-but-one*
    vector commitment, a GGM tree of length-doubling PRGs, and expands each seed to a
-   string `r_i`.
-2. **Build the prover's side.** In `F_{2^k}` it sets
-   ```
-   u = Σ r_i            v = Σ i · r_i
+   string $`r_i`$.
+2. **Build the prover's side.** In $`\mathbb{F}_{2^k}`$ it sets
+   ```math
+   u = \sum_i r_i, \qquad v = \sum_i i \cdot r_i
    ```
 3. **Prove first, then learn the challenge.** It sends the masked witness and the
-   QuickSilver response. Only then is the challenge `Δ = j*` drawn.
-4. **Open all but one.** The prover opens every seed except seed `j*`, which takes
-   about `k` tree nodes. The verifier computes
+   QuickSilver response. Only then is the challenge $`\Delta = j^*`$ drawn.
+4. **Open all but one.** The prover opens every seed except seed $`j^*`$, which takes
+   about $`k`$ tree nodes. The verifier computes
+   ```math
+   q = \sum_i (j^* - i) \cdot r_i = j^* \cdot u - v
    ```
-   q = Σ (j* − i) · r_i = j* · u − v
-   ```
-   which is a valid VOLE without the missing seed, because the term for `i = j*`
+   which is a valid VOLE without the missing seed, because the term for $`i = j^*`$
    vanishes.
 
 [![A GGM tree of eight seeds with the path to hidden seed 5 in red and the three opened siblings in blue, the prover's u and v, and the verifier's q = j*·u − v](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-tree.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-tree.png)
 
-The order is essential: once the prover knows `Δ`, binding is gone. With Fiat–Shamir,
+The order is essential: once the prover knows $`\Delta`$, binding is gone. With Fiat–Shamir,
 every challenge is a hash of the transcript so far, and the proof becomes a
 non-interactive, publicly verifiable signature.
 
 [![The seven steps of a VOLE-in-the-head proof, alternating between the prover and Fiat–Shamir challenges, with Δ drawn last](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-flow.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/privacy-pass-post-quantum/voleith-flow.png)
 
-A single tree gives `Δ` only `k` bits. VOLE-in-the-head therefore runs `τ` trees and
-joins them into one `λ`-bit key.
+A single tree gives $`\Delta`$ only $`k`$ bits. VOLE-in-the-head therefore runs $`\tau`$ trees and
+joins them into one $`\lambda`$-bit key.
 - **Aligning the trees.** The prover sends corrections that make every tree commit to
-  the same `u`.
+  the same $`u`$.
 - **Checking the corrections.** A universal-hash consistency check, from Roy's
   SoftSpokenOT, catches a prover who sends wrong ones.
 
@@ -233,21 +233,21 @@ joins them into one `λ`-bit key.
 
 A proof contains:
 - the masked witness;
-- `τ − 1` correction vectors of the same length;
+- $`\tau - 1`$ correction vectors of the same length;
 - the consistency-check and QuickSilver values;
 - for each tree, the opened path and the commitment to the hidden seed.
 
 Its size therefore grows linearly with the witness, and the number of constraints
 barely matters.
 
-The parameter that trades size against speed is `N`. A larger `N` needs fewer trees,
-which gives a shorter proof, but the prover and verifier expand about `τ · N` seeds,
+The parameter that trades size against speed is $`N`$. A larger $`N`$ needs fewer trees,
+which gives a shorter proof, but the prover and verifier expand about $`\tau \cdot N`$ seeds,
 which makes it slower. FAEST names the two ends "s", slow and short, and "f", fast
 and long.
 
 ### Compared with MPC-in-the-head
 
-Both techniques begin by splitting the witness into `N` shares and hiding one.
+Both techniques begin by splitting the witness into $`N`$ shares and hiding one.
 - **MPC-in-the-head** (Ishai, Kushilevitz, Ostrovsky and Sahai, 2007) simulates a
   multi-party computation and opens all but one party's view. It is the basis of
   Picnic and of the round-3 candidate SDitH.
@@ -260,12 +260,12 @@ that only a designated verifier can check.
 
 ### FAEST, the signature built on it
 
-A FAEST key pair is a plaintext–ciphertext pair `pk = (x, y)` with secret key `k`
-such that `AES_k(x) = y`. A signature is a VOLE-in-the-head proof of knowledge of
-`k`, with the message bound into the Fiat–Shamir challenges.
+A FAEST key pair is a plaintext–ciphertext pair $`\mathit{pk} = (x, y)`$ with secret key $`k`$
+such that $`\mathrm{AES}_k(x) = y`$. A signature is a VOLE-in-the-head proof of knowledge of
+$`k`$, with the message bound into the Fiat–Shamir challenges.
 - **Witness.** The prover records bits around each AES S-box and proves them
   consistent with low-degree constraints. FAEST v2 uses degree-3 constraints.
-- **FAEST-EM.** This variant uses the Even–Mansour form `y = AES_x(k) ⊕ k`, with `x`
+- **FAEST-EM.** This variant uses the Even–Mansour form $`y = \mathrm{AES}_x(k) \oplus k`$, with $`x`$
   public, so there is no key schedule to prove.
 - **Assumptions.** Apart from AES, FAEST's security rests only on PRGs and hash
   functions, because QuickSilver is information-theoretically secure. FAEST is also
@@ -285,22 +285,22 @@ signature.
 
 ## 4. Why they fit together
 
-To prove "I hold a valid UOV signature `s` on `t`", the prover commits to `s` and
-shows `P(s) = t`.
+To prove "I hold a valid UOV signature $`s`$ on $`t`$", the prover commits to $`s`$ and
+shows $`P(s) = t`$.
 
 | | UOV signature (uov-Ip) | ML-DSA-44 signature |
 | --- | --- | --- |
-| What the proof checks | 45 quadratic equations in `s`: `P(s) = t` | NTTs, SHAKE, rounding and norm bounds |
+| What the proof checks | 45 quadratic equations in $`s`$: $`P(s) = t`$ | NTTs, SHAKE, rounding and norm bounds |
 | Constraint degree | 2, which QuickSilver checks directly | mixed; the arithmetic is decomposed gate by gate |
-| Witness | `s` alone: 119 elements of `F_256`, 952 bits | every intermediate value |
-| Field | `F_256`, inside `F_{2^λ}` as FAEST already uses it | the ML-DSA prime field, which is not binary |
+| Witness | $`s`$ alone: 119 elements of $`\mathbb{F}_{256}`$, 952 bits | every intermediate value |
+| Field | $`\mathbb{F}_{256}`$, inside $`\mathbb{F}_{2^\lambda}`$ as FAEST already uses it | the ML-DSA prime field, which is not binary |
 
 The witness drives the proof size, and for UOV it is small. The 46.6 KB public key is
 an input that both sides already hold, so it costs computation but no proof bytes,
 and an issuer's key is fetched once and used for many tokens.
 
 What remains expensive is hashing inside the proof. In PoMFRIT the client proves
-`P(s) = H(m, r)` with `r` secret, so `H` has to be evaluated in zero knowledge. That
+$`P(s) = H(m, r)`$ with $`r`$ secret, so $`H`$ has to be evaluated in zero knowledge. That
 is why removing one hash, at the price of the one-more-UOV assumption, is the
 optimisation that matters.
 
@@ -309,12 +309,12 @@ optimisation that matters.
 **PoMFRIT** (Baum et al., USENIX Security 2026, ePrint 2026/109) turns a signature
 into a blind signature:
 
-1. The client commits to its message, `c = H(m, r)`.
-2. The issuer signs the commitment, `s = Sign(sk, c)`.
-3. The client proves in zero knowledge that it knows `s` and `r` such that
-   `Verify(pk, H(m, r)) = 1`. That proof is the blind signature.
+1. The client commits to its message, $`c = H(m, r)`$.
+2. The issuer signs the commitment, $`s = \mathrm{Sign}(\mathit{sk}, c)`$.
+3. The client proves in zero knowledge that it knows $`s`$ and $`r`$ such that
+   $`\mathrm{Verify}(\mathit{pk}, H(m, r)) = 1`$. That proof is the blind signature.
 
-The issuer saw only `c`, and the verifier sees only a proof, so the two cannot be
+The issuer saw only $`c`$, and the verifier sees only a proof, so the two cannot be
 linked. The paper uses MAYO, for a 6.7 KB signature; with UOV it is 4.3 KB, and
 issuance stays under 1 KB. A further optimisation has the client mask the hash and
 the issuer find a UOV preimage directly, removing one hash from the proof; it changes
@@ -330,7 +330,7 @@ moderator then issues a *credential* that governs the client's interaction with 
 site. Credentials need not hide their issuer or be publicly verifiable.
 
 - **VOLE-IHAT** is the endorsement candidate: an issuer-hiding token whose redemption
-  proves a valid signature under one of the anchor keys `P₁, …, P_N`, with the index
+  proves a valid signature under one of the anchor keys $`P_1, \dots, P_N`$, with the index
   kept in the witness. 5.6 KB to issue, 6.5 KB to redeem.
 - **VOLE-ACT** is the credential candidate: an anonymous credit token whose balance
   the issuer updates on each spend without learning it. Proving that a balance lies
