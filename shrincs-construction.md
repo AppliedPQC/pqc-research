@@ -81,7 +81,7 @@ not independent of one another; see the cross-binding in section 6.
 The first byte of a signature is the discriminator:
 
 - `= 255` (`FXMSS_HEIGHT`) selects the stateless path;
-- `0 ≤ x < 255` selects the stateful path, and the byte is the `leaf_height` of the leaf
+- $`0 \le x < 255`$ selects the stateful path, and the byte is the `leaf_height` of the leaf
   that signed.
 
 255 is available as a tag because `leaf_height = 255` corresponds to depth 0, and trees of
@@ -129,25 +129,25 @@ A SHRINCS key is thus a suffix extension of an SLH-DSA key.
 | `WOTS_C_CHAIN_COUNT` | **32** | Number of Winternitz chains, **with no checksum chains** |
 | `FXMSS_HEIGHT` | 255 | The imaginary height of the FXMSS tree, and so the maximum leaf depth |
 
-Derived: `WOTS_C_CONSTANT_SUM = ⌈32 × 15 / 2⌉ = 240`, the target sum of the chain indexes,
+Derived: `WOTS_C_CONSTANT_SUM` $`= \lceil 32 \times 15 / 2 \rceil = 240`$, the target sum of the chain indexes,
 which is also their expected value.
 
 ### Stateless parameters, against FIPS 205
 
 | Parameter | FIPS 205 name | SHRINCS | SLH-DSA-SHA2-**128s** |
 |---|---|---|---|
-| Security parameter (bytes) | `n` | 16 | 16 |
-| Winternitz | `lg_w` | 4 (w=16) | 4 (w=16) |
-| Hypertree layers | `d` | **5** | 7 |
-| XMSS height per layer | `h'` | 9 | 9 |
-| Total hypertree height | `h` | **45** | 63 |
-| FORS tree height | `a` | **13** | 12 |
-| FORS tree count | `k` | **10** | 14 |
-| Message digest length | `m` | **24** | 30 |
+| Security parameter (bytes) | $`n`$ | 16 | 16 |
+| Winternitz | $`\mathit{lg}_w`$ | 4 (w=16) | 4 (w=16) |
+| Hypertree layers | $`d`$ | **5** | 7 |
+| XMSS height per layer | $`h'`$ | 9 | 9 |
+| Total hypertree height | $`h`$ | **45** | 63 |
+| FORS tree height | $`a`$ | **13** | 12 |
+| FORS tree count | $`k`$ | **10** | 14 |
+| Message digest length | $`m`$ | **24** | 30 |
 | **Signature budget** | | **2⁴⁰** | 2⁶⁴ |
 | **Signature length** | | **5,776 B** | 7,856 B |
 
-WOTS-TW chain counts: `len1 = ⌈128/4⌉ = 32` and `len2 = ⌈bitlen(32×15)/4⌉ = ⌈9/4⌉ = 3`,
+WOTS-TW chain counts: $`\mathit{len}_1 = \lceil 128/4 \rceil = 32`$ and $`\mathit{len}_2 = \lceil \mathrm{bitlen}(32 \times 15)/4 \rceil = \lceil 9/4 \rceil = 3`$,
 for **35** chains, three more than WOTS+C.
 
 The 2,080-byte reduction decomposes exactly:
@@ -155,8 +155,8 @@ The 2,080-byte reduction decomposes exactly:
 | Component | SLH-DSA-128s | SHRINCS | Difference |
 |---|---|---|---|
 | Randomiser R | 16 | 16 | 0 |
-| FORS signature, `16·k·(a+1)` | 16×14×13 = 2,912 | 16×10×14 = **2,240** | −672 |
-| Hypertree signature, `d × (35×16 + 16×h')` | 7×704 = 4,928 | 5×704 = **3,520** | −1,408 |
+| FORS signature, $`16 \cdot k \cdot (a+1)`$ | 16×14×13 = 2,912 | 16×10×14 = **2,240** | −672 |
+| Hypertree signature, $`d \times (35 \times 16 + 16 \times h')`$ | 7×704 = 4,928 | 5×704 = **3,520** | −1,408 |
 | **Total** | **7,856** | **5,776** | **−2,080** |
 
 Two thirds of the saving comes from cutting the budget, which shortens the hypertree, and
@@ -290,11 +290,11 @@ only digests whose chain indexes already sum to a constant.
 requirement: Σ indexes == WOTS_C_CONSTANT_SUM = 240
 ```
 
-On a single chain, the signature value σᵢ is the intermediate result of walking dᵢ steps
+On a single chain, the signature value $`\sigma_i`$ is the intermediate result of walking $`d_i`$ steps
 along the chain from the secret key. A verifier can only continue forwards:
 
 
-With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly 32×15/2 = 240.
+With 32 chains of 4 bits each, over 0–15, the expected index sum is exactly $`32 \times 15 / 2 = 240`$.
 The signer **grinds** a 16-bit counter until the sum lands on it:
 
 ```rust
@@ -351,7 +351,7 @@ Two consequences follow:
 1. **Three chains fewer.** 32 against 35 for WOTS-TW, saving 48 bytes per signature, or
    roughly 8 percent.
 2. **Worst-case verification cost equals the average.** Because the index sum is fixed,
-   so is the total number of chain steps a verifier walks: Σ(15 − dᵢ) = 32×15 − 240 = 240,
+   so is the total number of chain steps a verifier walks: $`\sum_i (15 - d_i) = 32 \times 15 - 240 = 240`$,
    the same count the signer performs. A consensus verifier can therefore price the worst
    case exactly.
 
@@ -400,7 +400,7 @@ two have different interfaces.
 
 ### The imaginary height of 255
 
-The root is fixed at height 255, so `depth = 255 − height`. A leaf sits at height 0 only
+The root is fixed at height 255, so $`\text{depth} = 255 - \text{height}`$. A leaf sits at height 0 only
 at the maximum depth of 255. The specification calls 255 imaginary because no real tree
 can fill 2²⁵⁶ nodes.
 
@@ -408,19 +408,18 @@ Three properties follow:
 
 1. A leaf `height` occupies **one byte**, is carried in the signature, and gives the
    verifier the depth directly.
-2. The authentication path must be **exactly** `depth × 16` bytes, which cross-checks
+2. The authentication path must be **exactly** $`16 \times \text{depth}`$ bytes, which cross-checks
    against the declared height.
 3. 255 never occurs on the stateful path, which frees it as the tag for stateless
    signatures.
 
 ### Signature format and size
 
-```
-FXMSS signature = 2 (grind counter) + 512 (32 chains × 16 B) + 16 × depth
-                = 514 + 16·depth
-
-SHRINCS stateful signature = 1 (leaf_height) + 16 (R)
-                           + ⌈min(depth,64)/8⌉ (leaf_index) + FXMSS signature
+```math
+\begin{aligned}
+\text{FXMSS signature} &= \underbrace{2}_{\text{grind counter}} + \underbrace{512}_{32 \text{ chains} \times 16\,\text{B}} + 16 \times \text{depth} = 514 + 16 \times \text{depth} \\
+\text{SHRINCS stateful signature} &= \underbrace{1}_{\text{leaf height}} + \underbrace{16}_{R} + \underbrace{\lceil \min(\text{depth}, 64)/8 \rceil}_{\text{leaf index}} + \text{FXMSS signature}
+\end{aligned}
 ```
 
 - depth = 1: 1+16+1+530 = **548 B**, the minimum
@@ -453,7 +452,7 @@ children are leaves.
 ctr < 2^depth → (index=ctr, height=255−depth)
 ```
 
-The budget is **2^depth** and every signature is the same length: all leaves sit on one
+The budget is $`2^{\text{depth}}`$ and every signature is the same length: all leaves sit on one
 level, so the authentication path is always `depth` siblings.
 
 [![UXMSS and BXMSS side by side, with the signature size at each leaf and a table of budget and cost](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)](https://raw.githubusercontent.com/AppliedPQC/pqc-research/main/figures/shrincs-construction/fxmss-shapes.png)

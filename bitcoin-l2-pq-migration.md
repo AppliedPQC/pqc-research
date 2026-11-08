@@ -20,7 +20,7 @@ elliptic-curve assertion. Settlement and bridge outputs depend on the base
 layer's output types, so the L2 can only bound their exposure until the base
 layer acts. A bridge's pairing-based verifier can be replaced by a hash-based one
 under garbling but not under witness encryption, and the measured cost of such a
-verifier is of the order of 10^8 gates. Consensus keys are the least costly
+verifier is of the order of $`10^8`$ gates. Consensus keys are the least costly
 surface, and their migration costs bandwidth and storage rather than computation.
 
 ### Contents
@@ -341,8 +341,8 @@ bound at withdrawal rather than at garbling.
 
 The witness encryption is keyed to the Groth16 verification equation on BN254,
 
-```text
-e(pi_1, pi_2) = e(alpha, beta) * e(vk_x, gamma) * e(pi_3, delta_2)
+```math
+e(\pi_1, \pi_2) = e(\alpha, \beta) \cdot e(\mathit{vk}_x, \gamma) \cdot e(\pi_3, \delta_2)
 ```
 
 so the witness that decrypts the payout secret is a valid Groth16 proof, and the
@@ -352,13 +352,13 @@ unlocking and a hashlock on the payout secret, and "No pairings or target-group
 arithmetic are evaluated on chain." The security analysis of partial-binding
 witness encryption states the reduction directly:
 
-```text
-Adv_pbWE(lambda)  <=  Adv_BABE(lambda)  +  Adv_DLog[G1](lambda)
+```math
+\mathrm{Adv}_{\mathrm{pbWE}}(\lambda) \le \mathrm{Adv}_{\mathrm{BABE}}(\lambda) + \mathrm{Adv}_{\mathrm{DLog}[\mathbb{G}_1]}(\lambda)
 ```
 
 and concludes that it "stays within standard BABE assumptions plus GC-security
-and Lamport one-wayness". Against a quantum adversary `Adv_DLog[G1]` on BN254 goes
-to 1 and `Adv_BABE` rests on the same curve, so the bound becomes vacuous: the
+and Lamport one-wayness". Against a quantum adversary $`\mathrm{Adv}_{\mathrm{DLog}[\mathbb{G}_1]}`$ on BN254 goes
+to 1 and $`\mathrm{Adv}_{\mathrm{BABE}}`$ rests on the same curve, so the bound becomes vacuous: the
 adversary forges a Groth16 proof for a withdrawal that never occurred, decrypts
 the payout secret through the scheme's own correctness, and spends the hashlocked
 output, without breaking any garbling or inverting any hash.
@@ -403,9 +403,9 @@ segments, the same order as BitVM2's own. Lattice-based arguments avoid the
 per-level hash but pay in verifier work and require changing the prover's
 commitment scheme; their cost in script is unmeasured.
 
-**Garbled.** A binary-field STARK verifier, WHIR over GF(2^128) with Blake3,
-garbled as in BitVM3, has 9.4 × 10^7 non-free gates and garbles to 1.5 GB for a
-2^18-row trace at 104 bits of soundness, about thirty times fewer non-free gates
+**Garbled.** A binary-field STARK verifier, WHIR over $`\mathrm{GF}(2^{128})`$ with Blake3,
+garbled as in BitVM3, has $`9.4 \times 10^7`$ non-free gates and garbles to 1.5 GB for a
+$`2^{18}`$-row trace at 104 bits of soundness, about thirty times fewer non-free gates
 than the garbled Groth16 verifier
 ([Garbling a Hash-Based STARK Verifier for Bitcoin](https://github.com/GOATNetwork/bitcoin-stark-verifier/blob/whir-gc/paper/garbled-stark-verifier.pdf)).
 The field and the hash, more than the proof system, determine the cost of a
@@ -413,7 +413,7 @@ garbled verifier: as a Boolean circuit, a Poseidon2 permutation over a 31-bit
 prime field costs about 120 Blake3 compressions, so a proof committed with an
 algebraic hash over a prime field is better wrapped into a binary-field proof
 than garbled directly. Ziren, the zkVM in the case study, defines exactly this
-route alongside its pairing-based wrap: a binary stage over GF(2^128) with Blake3
+route alongside its pairing-based wrap: a binary stage over $`\mathrm{GF}(2^{128})`$ with Blake3
 and a narrow recursion reduce its proof to one whose verifier is a compact
 Boolean circuit ([Duan et al.](https://eprint.iacr.org/2026/2330)).
 
@@ -581,7 +581,7 @@ post-quantum output type and signature. The bridge is the decisive surface. Its
 post-quantum position is set not by the primitives it is built from, most of which
 are already post-quantum, but by the relation those primitives carry, and
 replacing that relation is feasible today under garbling at a measured cost of the
-order of 10^8 gates.
+order of $`10^8`$ gates.
 
 The analysis has three limits. One L2 has been examined in depth, so the taxonomy
 rests on a single case. The hash-based verifiers are measured on proofs of
